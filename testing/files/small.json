@@ -1,0 +1,19 @@
+{
+  "jsonapi": {
+    "version": "1.0"
+  },
+  "links": {
+    "self": "https://dummy.fake/v1/items?page=1"
+  },
+  "data": [
+    {
+      "type": "items",
+      "id": "item-fake-01",
+      "attributes": {
+        "name": "Placeholder Item",
+        "status": "mocked",
+        "is_test": true
+      }
+    }
+  ]
+}

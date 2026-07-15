@@ -1,0 +1,33 @@
+{
+    order cache before reverse_proxy
+    cache {
+        timing {
+            ttl 5m
+            max_stale 5s
+            ttl_splay 5s
+        }
+
+        metadata_storage otter {
+            memory_limit 16777216 # 64MB
+        }
+        storage otter {
+            memory_limit 805306368  # 768MB
+        }
+    }
+}
+
+:2020 {
+    log
+
+    reverse_proxy {
+        to localhost:2019
+        header_up Host {upstream_hostport}
+    }
+}
+
+:8080 {
+    route * {
+        cache
+        reverse_proxy fileserver
+    }
+}

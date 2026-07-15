@@ -1,0 +1,8 @@
+{
+  "name": "k6",
+  "private": true,
+  "dependencies": {
+    "@types/k6": "^2.0.1",
+    "typescript": "^7.0.2"
+  }
+}

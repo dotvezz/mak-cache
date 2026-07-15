@@ -1,0 +1,34 @@
+{
+    debug
+    metrics
+
+    cache {
+        timing {
+            ttl 20s
+            max_stale 200s
+            ttl_splay 10s
+        }
+
+        metadata_storage otter {
+            memory_limit 268435456 # 256mb
+        }
+        storage otter {
+            memory_limit 268435456 # 256mb
+        }
+    }
+}
+
+http://localhost:8080 {
+    route /get {
+        cache
+        #        uri replace /get /about/
+        reverse_proxy https://httpbin.org
+    }
+
+    route /gitpush {
+        cache
+
+        uri replace /gitpush /about/
+        reverse_proxy https://gitpush--force.com
+    }
+}

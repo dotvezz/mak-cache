@@ -1,0 +1,399 @@
+package cache
+
+import (
+	"strconv"
+	"time"
+
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+	"github.com/dotvezz/caddy-cache/cache"
+	"github.com/dotvezz/caddy-cache/config"
+	"github.com/dotvezz/caddy-cache/minitime"
+	"github.com/dotvezz/caddy-cache/storage"
+	"github.com/dotvezz/caddy-cache/storage/otter"
+	"golang.org/x/sync/singleflight"
+)
+
+var (
+	_ caddy.Provisioner           = (*Handler)(nil)
+	_ caddyhttp.MiddlewareHandler = (*Handler)(nil)
+	_ caddyfile.Unmarshaler       = (*Handler)(nil)
+	//_ caddy.Validator             = (*Handler)(nil)
+)
+
+type caddyfileHelper interface {
+	NextBlock(int) bool
+	Nesting() int
+	Next() bool
+	Args(...*string) bool
+	Val() string
+	NextArg() bool
+	ArgErr() error
+	RemainingArgs() []string
+	Errf(format string, args ...any) error
+}
+
+const (
+	defaultKey = " default " // Spaces to make it hard to parse an accidentally colliding key from Caddyfile
+	moduleName = "cache"
+)
+
+func init() {
+	caddy.RegisterModule(Handler{})
+
+	httpcaddyfile.RegisterHandlerDirective(moduleName, parseCaddyfile)
+	httpcaddyfile.RegisterGlobalOption(moduleName, registerGlobalOption)
+}
+
+func (h Handler) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.handlers.oauth_proxy",
+		New: func() caddy.Module { return new(Handler) },
+	}
+}
+
+func (h *Handler) Provision(context caddy.Context) (err error) {
+	for _, cfg := range h.Config.Storage {
+		switch {
+		case cfg.Otter != nil:
+			if h.entryStorage == nil {
+				h.entryStorage, err = otter.NewProvider[*cache.Entry](*cfg.Otter)
+			} else {
+				var store2 storage.Provider[*cache.Entry]
+				store2, err = otter.NewProvider[*cache.Entry](*cfg.Otter)
+				h.entryStorage = storage.Wrap(h.entryStorage, store2)
+			}
+		}
+	}
+
+	for _, cfg := range h.Config.MetadataStorage {
+		switch {
+		case cfg.Otter != nil:
+			if h.metadataStorage == nil {
+				h.metadataStorage, err = otter.NewProvider[*cache.Metadata](*cfg.Otter)
+			} else {
+				var store2 storage.Provider[*cache.Metadata]
+				store2, err = otter.NewProvider[*cache.Metadata](*cfg.Otter)
+				h.metadataStorage = storage.Wrap(h.metadataStorage, store2)
+			}
+		}
+	}
+
+	h.singleflight = new(singleflight.Group)
+	h.now = time.Now
+
+	return nil
+}
+
+func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	return parseFromCustomHelper(d, &h.Config)
+}
+
+//func (h *Handler) Validate() error {
+//	//TODO implement me
+//	panic("implement me")
+//}
+
+// registerGlobalOption registers global options for the oauth_proxy directive.
+func registerGlobalOption(d *caddyfile.Dispenser, existing any) (any, error) {
+	d.Next() // Consume the directive name
+
+	if existing == nil { // If configMap is nil, initialize it with a map
+		existing = make(map[string]config.Config)
+	}
+
+	var (
+		configMap map[string]config.Config
+		ok        bool
+	)
+	if configMap, ok = existing.(map[string]config.Config); !ok {
+		return nil, d.Errf("invalid configMap type")
+	}
+
+	var key string
+	if !d.Args(&key) {
+		key = defaultKey
+	}
+
+	c := config.Config{}
+	err := parseFromCustomHelper(d, &c)
+	configMap[key] = c
+	return configMap, err
+}
+
+// parseCaddyfile parses the oauth_proxy directive from Caddyfile.
+func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	hnd := new(Handler)
+	h.Next() // consume directive name
+
+	if !h.Args(&hnd.ConfigKey) {
+		hnd.ConfigKey = defaultKey
+	}
+
+	existing := h.Option(moduleName)
+	if existing != nil {
+		if _, ok := existing.(map[string]config.Config); !ok {
+			return nil, h.Errf("invalid global config type %T, expected %T", existing, map[string]config.Config{})
+		}
+
+		if global, ok := existing.(map[string]config.Config)[hnd.ConfigKey]; ok {
+			hnd.Config = global
+		}
+	}
+
+	err := parseFromCustomHelper(h, &hnd.Config)
+	return hnd, err
+}
+
+func parseFromCustomHelper(h caddyfileHelper, c *config.Config) error {
+	for h.NextBlock(0) {
+		key := h.Val()
+		switch key {
+		case "ignore_vary_headers":
+			c.IgnoreVaryHeaders = h.RemainingArgs()
+		case "timing":
+			if err := parseTimingConfig(h, &c.Timing); err != nil {
+				return err
+			}
+		case "status_timings", "status_timing":
+			args := h.RemainingArgs()
+			if len(args) == 0 {
+				return h.Errf("expected at least one HTTP status code")
+			}
+			var statusCodes []int
+			for _, arg := range args {
+				code, err := strconv.Atoi(arg)
+				if err != nil {
+					return h.Errf("invalid HTTP status code %q: %v", arg, err)
+				}
+				statusCodes = append(statusCodes, code)
+			}
+			var t config.TimingConfig
+			if err := parseTimingConfig(h, &t); err != nil {
+				return err
+			}
+			if c.StatusTimings == nil {
+				c.StatusTimings = make(map[int]config.TimingConfig)
+			}
+			for _, code := range statusCodes {
+				c.StatusTimings[code] = t
+			}
+		case "etag":
+			nesting := h.Nesting()
+			for h.NextBlock(nesting) {
+				subKey := h.Val()
+				switch subKey {
+				case "disable":
+					val, err := parseBoolArg(h)
+					if err != nil {
+						return err
+					}
+					c.ETag.Disable = val
+				case "crc32":
+					val, err := parseBoolArg(h)
+					if err != nil {
+						return err
+					}
+					c.ETag.CRC32 = val
+				case "sha256":
+					val, err := parseBoolArg(h)
+					if err != nil {
+						return err
+					}
+					c.ETag.SHA256 = val
+				default:
+					return h.Errf("unknown etag configuration subkey %q", subKey)
+				}
+			}
+		case "key":
+			nesting := h.Nesting()
+			for h.NextBlock(nesting) {
+				subKey := h.Val()
+				switch subKey {
+				case "components":
+					c.Key.Components = h.RemainingArgs()
+				case "strip_query_params":
+					c.Key.StripQueryParams = h.RemainingArgs()
+				case "no_query_sort":
+					val, err := parseBoolArg(h)
+					if err != nil {
+						return err
+					}
+					c.Key.NoQuerySort = val
+				default:
+					return h.Errf("unknown key configuration subkey %q", subKey)
+				}
+			}
+		case "coalesce":
+			nesting := h.Nesting()
+			for h.NextBlock(nesting) {
+				subKey := h.Val()
+				switch subKey {
+				case "disable":
+					val, err := parseBoolArg(h)
+					if err != nil {
+						return err
+					}
+					c.Coalesce.Disable = val
+				default:
+					return h.Errf("unknown coalesce configuration subkey %q", subKey)
+				}
+			}
+		case "storage":
+			s, err := parseStorageConfig(h)
+			if err != nil {
+				return err
+			}
+			c.Storage = append(c.Storage, s)
+		case "metadata_storage", "metadata":
+			s, err := parseStorageConfig(h)
+			if err != nil {
+				return err
+			}
+			c.MetadataStorage = append(c.MetadataStorage, s)
+		case "refresh":
+			nesting := h.Nesting()
+			for h.NextBlock(nesting) {
+				subKey := h.Val()
+				switch subKey {
+				case "disable":
+					val, err := parseBoolArg(h)
+					if err != nil {
+						return err
+					}
+					c.Refresh.Disable = val
+				case "timeout":
+					d, err := parseDurationArg(h)
+					if err != nil {
+						return err
+					}
+					c.Refresh.Timeout = d
+				default:
+					return h.Errf("unknown refresh configuration subkey %q", subKey)
+				}
+			}
+		case "prometheus":
+			args := h.RemainingArgs()
+			if len(args) > 1 {
+				return h.Errf("invalid prometheus arguments: %v", args)
+			}
+			if len(args) == 1 {
+				c.Prometheus.Prefix = args[0]
+			}
+			nesting := h.Nesting()
+			for h.NextBlock(nesting) {
+				subKey := h.Val()
+				switch subKey {
+				case "prefix":
+					var prefix string
+					if !h.Args(&prefix) {
+						return h.ArgErr()
+					}
+					c.Prometheus.Prefix = prefix
+				default:
+					return h.Errf("unknown prometheus configuration subkey %q", subKey)
+				}
+			}
+		default:
+			return h.Errf("unknown configuration option %q", key)
+		}
+	}
+
+	return nil
+}
+
+func parseBoolArg(h caddyfileHelper) (bool, error) {
+	args := h.RemainingArgs()
+	if len(args) == 0 {
+		return true, nil
+	}
+	if len(args) > 1 {
+		return false, h.Errf("invalid boolean value: %v", args)
+	}
+	switch args[0] {
+	case "true", "yes", "on":
+		return true, nil
+	case "false", "no", "off":
+		return false, nil
+	default:
+		return false, h.Errf("invalid boolean value: %q", args[0])
+	}
+}
+
+func parseDurationArg(h caddyfileHelper) (minitime.Duration, error) {
+	args := h.RemainingArgs()
+	if len(args) != 1 {
+		return 0, h.Errf("expected exactly one duration value, got %v", args)
+	}
+	d, err := time.ParseDuration(args[0])
+	if err != nil {
+		return 0, h.Errf("invalid duration value %q: %v", args[0], err)
+	}
+	return minitime.Duration(d), nil
+}
+
+func parseTimingConfig(h caddyfileHelper, t *config.TimingConfig) error {
+	nesting := h.Nesting()
+	for h.NextBlock(nesting) {
+		subKey := h.Val()
+		switch subKey {
+		case "ttl":
+			d, err := parseDurationArg(h)
+			if err != nil {
+				return err
+			}
+			t.TTL = d
+		case "max_stale":
+			d, err := parseDurationArg(h)
+			if err != nil {
+				return err
+			}
+			t.MaxStale = d
+		case "ttl_splay":
+			d, err := parseDurationArg(h)
+			if err != nil {
+				return err
+			}
+			t.TTLSplay = d
+		default:
+			return h.Errf("unknown timing configuration subkey %q", subKey)
+		}
+	}
+	return nil
+}
+
+func parseStorageConfig(h caddyfileHelper) (config.StorageConfig, error) {
+	var s config.StorageConfig
+	args := h.RemainingArgs()
+	if len(args) != 1 {
+		return s, h.Errf("expected exactly one argument for storage provider name, got %v", args)
+	}
+	providerName := args[0]
+	switch providerName {
+	case "otter":
+		s.Otter = &config.OtterConfig{}
+		nesting := h.Nesting()
+		for h.NextBlock(nesting) {
+			subKey := h.Val()
+			switch subKey {
+			case "memory_limit":
+				var valStr string
+				if !h.Args(&valStr) {
+					return s, h.ArgErr()
+				}
+				val, err := strconv.Atoi(valStr) // TODO: Parse size strings and big uint64 numbers
+				if err != nil {
+					return s, h.Errf("invalid memory_limit value %q: %v", valStr, err)
+				}
+				s.Otter.MemoryLimit = uint64(val)
+			default:
+				return s, h.Errf("unknown in_memory storage configuration subkey %q", subKey)
+			}
+		}
+	default:
+		return s, h.Errf("unknown storage provider %q", providerName)
+	}
+	return s, nil
+}

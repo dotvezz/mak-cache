@@ -1,0 +1,6 @@
+:80 {
+    log
+
+    root /srv
+    file_server
+}

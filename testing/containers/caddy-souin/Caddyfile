@@ -1,0 +1,14 @@
+{
+    order cache before reverse_proxy
+    cache {
+        otter
+        ttl 5m
+    }
+}
+
+:8082 {
+    route * {
+        cache
+        reverse_proxy fileserver
+    }
+}
