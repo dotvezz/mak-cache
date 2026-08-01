@@ -14,7 +14,7 @@ func NewOneShot(inner http.ResponseWriter) *OneShot {
 	return &OneShot{
 		inner: inner,
 		buf:   bytes.NewBuffer([]byte{}),
-		staged: http.Response{
+		Staged: http.Response{
 			Header: make(http.Header),
 		},
 	}
@@ -23,7 +23,7 @@ func NewOneShot(inner http.ResponseWriter) *OneShot {
 type OneShot struct {
 	inner http.ResponseWriter
 
-	staged http.Response
+	Staged http.Response
 
 	buf *bytes.Buffer
 
@@ -31,7 +31,7 @@ type OneShot struct {
 }
 
 func (o *OneShot) Reset() {
-	o.staged = http.Response{
+	o.Staged = http.Response{
 		Header: make(http.Header)}
 	o.buf.Reset()
 }
@@ -43,18 +43,18 @@ func (o *OneShot) Fire() error {
 
 	o.fired = true
 
-	for k := range o.staged.Header {
-		o.inner.Header().Add(k, o.staged.Header.Get(k))
+	for k := range o.Staged.Header {
+		o.inner.Header().Add(k, o.Staged.Header.Get(k))
 	}
 
-	o.inner.WriteHeader(o.staged.StatusCode)
+	o.inner.WriteHeader(o.Staged.StatusCode)
 
 	_, err := o.buf.WriteTo(o.inner)
 	return err
 }
 
 func (o *OneShot) Header() http.Header {
-	return o.staged.Header
+	return o.Staged.Header
 }
 
 func (o *OneShot) Write(bytes []byte) (int, error) {
@@ -62,5 +62,5 @@ func (o *OneShot) Write(bytes []byte) (int, error) {
 }
 
 func (o *OneShot) WriteHeader(statusCode int) {
-	o.staged.StatusCode = statusCode
+	o.Staged.StatusCode = statusCode
 }

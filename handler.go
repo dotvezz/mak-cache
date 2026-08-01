@@ -4,31 +4,34 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
+	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/dotvezz/caddy-cache/headers"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
+
 	"golang.org/x/sync/singleflight"
 
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/dotvezz/caddy-cache/cache"
 	"github.com/dotvezz/caddy-cache/config"
+	"github.com/dotvezz/caddy-cache/headers"
 	"github.com/dotvezz/caddy-cache/storage"
 )
 
 var errNotBuffered = errors.New("not buffered")
 
 type Handler struct {
+	*slog.Logger
 	config.Config
 
-	ConfigKey string `json:"config_key"`
-
+	ConfigKey       string `json:"config_key"`
 	metadataStorage storage.Provider[*cache.Metadata]
-	entryStorage    storage.Provider[*cache.Entry]
+
+	entryStorage storage.Provider[*cache.Entry]
 
 	singleflight *singleflight.Group
 
@@ -74,33 +77,6 @@ func getCacheStatus(ctx context.Context) *headers.CacheStatus {
 	return &headers.CacheStatus{}
 }
 
-func (h *Handler) getMetadata(ctx context.Context, key string) (*cache.Metadata, error) {
-	if h.metadataStorage == nil {
-		e, err := h.entryStorage.Get(ctx, key)
-		if err != nil {
-			return nil, err
-		}
-		return &e.Metadata, err
-	}
-
-	return h.metadataStorage.Get(ctx, key)
-}
-
-func (h *Handler) setMetadata(ctx context.Context, key string, meta *cache.Metadata) error {
-	if meta == nil {
-		return fmt.Errorf("metadata is nil")
-	}
-
-	if h.metadataStorage == nil {
-		e := &cache.Entry{
-			Metadata: *meta,
-		}
-		return h.entryStorage.Set(ctx, key, e)
-	}
-
-	return h.metadataStorage.Set(ctx, key, meta)
-}
-
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) (err error) {
 	var (
 		meta  *cache.Metadata
@@ -118,6 +94,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	ctx = withOriginalRequest(ctx, r.Clone(r.Context()))
 	r = r.WithContext(ctx)
 
+	// TODO: configurable caching rules for not-traditionally-cacheable methods
 	if r.Method != http.MethodHead && r.Method != http.MethodGet {
 		cacheStatus.FwdMethod = true
 		return h.bypass(w, r, next)
@@ -130,7 +107,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return h.forward(w, r, next)
 	}
 
-	if slices.Contains(meta.Vary, "*") || slices.Contains(meta.CacheControl, "No-Store") {
+	cacheControl := headers.CacheControl{}
+	err = cacheControl.FromDirectives(meta.CacheControl)
+	if err != nil {
+		h.Info("Cache-Control error", slog.String("error", err.Error()))
+	}
+
+	if slices.Contains(meta.Vary, "*") || !cacheControl.Cacheable() {
 		cacheStatus.FwdBypass = true
 		return h.bypass(w, r, next)
 	}
@@ -149,7 +132,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 
 	if entry.Expires.Before(h.now()) {
 		if !h.Refresh.Disable && entry.Expires.Before(h.now().Add(time.Duration(h.Timing.MaxStale))) {
-			h.backgroundRefresh(r, next)
+			h.backgroundRefresh(r, entry, next)
 		} else {
 			cacheStatus.FwdStale = true
 			return h.forward(w, r, next)
@@ -166,7 +149,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		}
 
 		if len(ifNoneMatchSet) > 0 && !slices.Contains(ifNoneMatchSet, entry.ETag) {
-			return h.hit(w, r, entry)
+			return h.forward(w, r, next)
 		} else if len(ifNoneMatchSet) == 0 {
 			cacheStatus.Hit = true
 		} else if len(ifNoneMatchSet) > 0 && slices.Contains(ifNoneMatchSet, entry.ETag) {
@@ -175,7 +158,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	}
 
 	return h.hit(w, r, entry)
-
 }
 
 func (h *Handler) shouldBuffer(status int, _ http.Header) bool {
@@ -216,11 +198,15 @@ func (h *Handler) hitHeaders(w http.ResponseWriter, r *http.Request, e *cache.En
 	if e.ETag != "" {
 		hs.Set("ETag", e.ETag)
 	}
+
+	w.Header().Set("Content-Length", strconv.Itoa(len(e.Body)))
 }
 
 func (h *Handler) hit(w http.ResponseWriter, r *http.Request, e *cache.Entry) error {
 	h.hitHeaders(w, r, e)
 	w.WriteHeader(e.Status)
+	rc := http.NewResponseController(w)
+	defer rc.Flush()
 	_, err := w.Write(e.Body)
 	return err
 }

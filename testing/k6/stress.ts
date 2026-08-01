@@ -24,7 +24,7 @@ export const options: Options = {
 };
 
 export const oneLargeJSON = () => {
-    const res = getPath(8083, "large.json");
+    const res = getPath(8080, "large.json");
 
     check(res, {
         'status is 200': (r) => r.status === 200,

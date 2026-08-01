@@ -34,21 +34,21 @@ func (h *Handler) toUpstream(w http.ResponseWriter, r *http.Request, next caddyh
 	return e, err
 }
 
-func (h *Handler) backgroundRefresh(r *http.Request, next caddyhttp.Handler) {
+func (h *Handler) backgroundRefresh(req *http.Request, entry *cache.Entry, next caddyhttp.Handler) {
 	// After it finishes writing downstream, caddy runs a deferred timeout cancel.
 	// Since we're running this in the background, that cancel would be a problem so we'll just ignore it here.
-	newCtx := context.WithoutCancel(r.Context())
-	r = r.WithContext(newCtx)
+	newCtx := context.WithoutCancel(req.Context())
+	req = req.WithContext(newCtx)
 
 	go func() {
 		// Since we removed the cancel above, we want to ensure we have a timeout
-		ctx, cancel := context.WithTimeout(r.Context(), h.Refresh.ResolveTimeout())
+		ctx, cancel := context.WithTimeout(req.Context(), h.Refresh.ResolveTimeout())
 		defer cancel()
-		r = r.WithContext(ctx)
+		req = req.WithContext(ctx)
 
 		noop := responses.NoopWriter{}
 
-		_ = h.forward(noop, r, next)
+		_ = h.revalidate(noop, req, entry, next)
 	}()
 }
 
@@ -81,9 +81,24 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, next caddyhttp
 	cacheable := true
 	vary := headers.Vary{}
 	vary.FromHeaders(oneShot.Header().Values("Vary"))
+
 	m.Vary = vary.ValsWithout(h.IgnoreVaryHeaders)
 	if slices.Contains(m.Vary, "*") {
 		cacheable = false
+	}
+
+	if cc := oneShot.Header().Values("Cache-Control"); len(cc) > 0 {
+		cacheControl := headers.CacheControl{}
+		// Only load the most-recent (last in the slice) Cache-Control header
+		err = cacheControl.FromString(cc[len(cc)-1])
+		if err == nil {
+			// Only load Cache-Control into the metadata if we were able to successfully parse it
+			m.CacheControl = cacheControl.Directives()
+		}
+
+		if !cacheControl.Cacheable() {
+			cacheable = false
+		}
 	}
 
 	err = h.setMetadata(r.Context(), key, m)

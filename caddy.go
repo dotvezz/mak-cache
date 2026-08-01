@@ -83,6 +83,7 @@ func (h *Handler) Provision(context caddy.Context) (err error) {
 
 	h.singleflight = new(singleflight.Group)
 	h.now = time.Now
+	h.Logger = context.Slogger()
 
 	return nil
 }
