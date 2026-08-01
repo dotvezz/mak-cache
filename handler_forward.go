@@ -15,8 +15,8 @@ import (
 )
 
 func (h *Handler) toUpstream(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) (e *cache.Entry, err error) {
-	bs := make([]byte, 0, 1024)
-	buf := bytes.NewBuffer(bs)
+	e = new(cache.Entry)
+	buf := bytes.NewBuffer(e.Body)
 	rec := caddyhttp.NewResponseRecorder(w, buf, h.shouldBuffer)
 
 	err = next.ServeHTTP(rec, r)
@@ -28,13 +28,12 @@ func (h *Handler) toUpstream(w http.ResponseWriter, r *http.Request, next caddyh
 		return nil, errNotBuffered
 	}
 
-	e = new(cache.Entry)
 	e.FromResponse(rec)
 
 	return e, err
 }
 
-func (h *Handler) backgroundRefresh(req *http.Request, entry *cache.Entry, next caddyhttp.Handler) {
+func (h *Handler) backgroundRefresh(req *http.Request, entry *cache.Entry, cacheStatus headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) {
 	// After it finishes writing downstream, caddy runs a deferred timeout cancel.
 	// Since we're running this in the background, that cancel would be a problem so we'll just ignore it here.
 	newCtx := context.WithoutCancel(req.Context())
@@ -48,13 +47,18 @@ func (h *Handler) backgroundRefresh(req *http.Request, entry *cache.Entry, next 
 
 		noop := responses.NoopWriter{}
 
-		_ = h.revalidate(noop, req, entry, next)
+		_ = h.revalidate(noop, req, entry, cacheStatus, requestTime, next)
 	}()
 }
 
-func (h *Handler) forward(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	originalRequest := getOriginalRequest(r.Context())
-	key := cache.GenerateKey(originalRequest, h.Key, nil)
+func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) error {
+	// We're holding on to a clone of the original request because we may need to reuse it, for example if the origin
+	// response has a Vary header.
+	// Because we're living in a Caddy handler, and upstream handlers may mutate the request, the original value of r
+	// is not safe for reuse.
+	rClone := r.Clone(r.Context())
+
+	key := cache.GenerateKey(r, h.Key, nil)
 	oneShot := responses.NewOneShot(w)
 	e, err, collapsed := h.singleflight.Do(key, func() (any, error) {
 		return h.toUpstream(oneShot, r, next)
@@ -70,12 +74,11 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, next caddyhttp
 
 	entry := e.(*cache.Entry)
 
-	cacheStatus := getCacheStatus(r.Context())
 	cacheStatus.Collapsed = collapsed
 
 	m := &cache.Metadata{
-		Date:    getRequestTime(r.Context()),
-		Expires: getRequestTime(r.Context()).Add(time.Duration(h.Timing.TTL)),
+		Date:    requestTime,
+		Expires: requestTime.Add(time.Duration(h.Timing.TTL)),
 	}
 
 	cacheable := true
@@ -87,6 +90,7 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, next caddyhttp
 		cacheable = false
 	}
 
+	// TODO: Optionally override/disable upstream cache-control
 	if cc := oneShot.Header().Values("Cache-Control"); len(cc) > 0 {
 		cacheControl := headers.CacheControl{}
 		// Only load the most-recent (last in the slice) Cache-Control header
@@ -94,6 +98,10 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, next caddyhttp
 		if err == nil {
 			// Only load Cache-Control into the metadata if we were able to successfully parse it
 			m.CacheControl = cacheControl.Directives()
+		}
+
+		if cacheControl.MaxAge > 0 {
+			m.Expires = time.Now().Add(cacheControl.MaxAge)
 		}
 
 		if !cacheControl.Cacheable() {
@@ -104,7 +112,7 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, next caddyhttp
 	err = h.setMetadata(r.Context(), key, m)
 
 	if len(m.Vary) > 0 {
-		keyWithVary := cache.GenerateKey(originalRequest, h.Key, m.Vary)
+		keyWithVary := cache.GenerateKey(r, h.Key, m.Vary)
 		oneShot.Reset()
 		e, err, _ = h.singleflight.Do(keyWithVary, func() (any, error) {
 			return h.toUpstream(oneShot, r, next)
@@ -128,8 +136,8 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, next caddyhttp
 			}
 		}
 
-		keyWithVary := cache.GenerateKey(originalRequest, h.Key, m.Vary)
-		err = h.entryStorage.Set(r.Context(), keyWithVary, entry)
+		keyWithVary := cache.GenerateKey(rClone, h.Key, m.Vary)
+		err = h.setEntry(r.Context(), keyWithVary, entry)
 		cacheStatus.Stored = err == nil
 	}
 

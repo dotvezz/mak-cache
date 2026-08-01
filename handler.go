@@ -1,15 +1,11 @@
 package cache
 
 import (
-	"bytes"
-	"context"
 	"errors"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"slices"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -38,126 +34,78 @@ type Handler struct {
 	now func() time.Time
 }
 
-const ContextKeyRequestTime = "caddy_cache-request_time"
-const ContextKeyCacheStatus = "caddy_cache-cache_status"
-const ContextKeyOriginalRequest = "caddy_cache-original_request"
-
-func withRequestTime(ctx context.Context, time time.Time) context.Context {
-	return context.WithValue(ctx, ContextKeyRequestTime, time)
-}
-
-func getRequestTime(ctx context.Context) time.Time {
-	if t, ok := ctx.Value(ContextKeyRequestTime).(time.Time); ok {
-		return t
-	}
-
-	return time.Time{}
-}
-
-func withOriginalRequest(ctx context.Context, r *http.Request) context.Context {
-	return context.WithValue(ctx, ContextKeyOriginalRequest, r)
-}
-
-func getOriginalRequest(ctx context.Context) *http.Request {
-	if r, ok := ctx.Value(ContextKeyOriginalRequest).(*http.Request); ok {
-		return r
-	}
-	return nil
-}
-
-func withCacheStatus(ctx context.Context, status *headers.CacheStatus) context.Context {
-	return context.WithValue(ctx, ContextKeyCacheStatus, status)
-}
-
-func getCacheStatus(ctx context.Context) *headers.CacheStatus {
-	if cs, ok := ctx.Value(ContextKeyCacheStatus).(*headers.CacheStatus); ok {
-		return cs
-	}
-
-	return &headers.CacheStatus{}
-}
-
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) (err error) {
-	var (
-		meta  *cache.Metadata
-		entry *cache.Entry
-	)
-
-	headers.CanonicalizeRequest(r.Header)
-
-	ctx := r.Context()
-	cacheStatus := headers.CacheStatus{
-		Key: cache.GenerateKey(r, h.Key, nil),
-	}
-	ctx = withCacheStatus(ctx, &cacheStatus)
-	ctx = withRequestTime(ctx, h.now())
-	ctx = withOriginalRequest(ctx, r.Clone(r.Context()))
-	r = r.WithContext(ctx)
+	cacheStatus := headers.CacheStatus{}
+	requestTime := h.now()
 
 	// TODO: configurable caching rules for not-traditionally-cacheable methods
 	if r.Method != http.MethodHead && r.Method != http.MethodGet {
 		cacheStatus.FwdMethod = true
-		return h.bypass(w, r, next)
+		w.Header().Add("Cache-Status", cacheStatus.String())
+		return next.ServeHTTP(w, r)
 	}
 
-	meta, err = h.getMetadata(r.Context(), cacheStatus.Key)
+	headers.CanonicalizeRequest(r.Header)
+	cacheStatus.Key = cache.GenerateKey(r, h.Key, nil)
 
-	if err != nil {
+	meta, found := h.getMetadata(r.Context(), cacheStatus.Key)
+
+	if !found {
 		cacheStatus.FwdURIMiss = true
-		return h.forward(w, r, next)
+		return h.forward(w, r, cacheStatus, requestTime, next)
 	}
 
 	cacheControl := headers.CacheControl{}
 	err = cacheControl.FromDirectives(meta.CacheControl)
 	if err != nil {
-		h.Info("Cache-Control error", slog.String("error", err.Error()))
+		h.Info("Cache-Control", slog.String("error", err.Error()))
 	}
 
 	if slices.Contains(meta.Vary, "*") || !cacheControl.Cacheable() {
 		cacheStatus.FwdBypass = true
-		return h.bypass(w, r, next)
+		w.Header().Add("Cache-Status", cacheStatus.String())
+		return next.ServeHTTP(w, r)
 	}
 
 	if len(meta.Vary) > 0 {
 		cacheStatus.Key = cache.GenerateKey(r, h.Key, meta.Vary)
 	}
 
-	entry, err = h.entryStorage.Get(ctx, cacheStatus.Key)
-	if err != nil {
+	var entry *cache.Entry
+	entry, found = h.getEntry(r.Context(), cacheStatus.Key)
+	if !found {
 		if len(meta.Vary) > 0 {
+			// Found metadata for the original request, but not an entry that matches the regenerated key with the Vary
+			// headers, therefore FwdVaryMiss
+			// Strictly speaking, this could be a miss due to cache eviction, but _most likely_ to be a Vary miss
 			cacheStatus.FwdVaryMiss = true
 		}
-		return h.forward(w, r, next)
+		return h.forward(w, r, cacheStatus, requestTime, next)
 	}
 
 	if entry.Expires.Before(h.now()) {
-		if !h.Refresh.Disable && entry.Expires.Before(h.now().Add(time.Duration(h.Timing.MaxStale))) {
-			h.backgroundRefresh(r, entry, next)
+		if !h.Refresh.Disable && entry.Expires.Before(h.now().Add(cacheControl.StaleWhileRevalidate)) {
+			h.backgroundRefresh(r, entry, cacheStatus, requestTime, next)
 		} else {
 			cacheStatus.FwdStale = true
-			return h.forward(w, r, next)
+			return h.forward(w, r, cacheStatus, requestTime, next)
 		}
 	}
 
 	{
-		ifNoneMatchHeader := r.Header["If-None-Match"]
-		ifNoneMatchSet := make([]string, 0)
-		for i := range ifNoneMatchHeader {
-			for _, v := range strings.Split(ifNoneMatchHeader[i], ",") {
-				ifNoneMatchSet = append(ifNoneMatchSet, strings.TrimSpace(v))
-			}
-		}
+		ifNoneMatch := headers.IfNoneMatch{}
+		ifNoneMatch.FromHeaders(r.Header["If-None-Match"])
 
-		if len(ifNoneMatchSet) > 0 && !slices.Contains(ifNoneMatchSet, entry.ETag) {
-			return h.forward(w, r, next)
-		} else if len(ifNoneMatchSet) == 0 {
-			cacheStatus.Hit = true
-		} else if len(ifNoneMatchSet) > 0 && slices.Contains(ifNoneMatchSet, entry.ETag) {
-			return h.notModified(w, r, entry)
+		if !ifNoneMatch.Empty() {
+			if ifNoneMatch.Contains(entry.ETag) {
+				return h.notModified(w, cacheStatus, requestTime, entry)
+			}
+			return h.forward(w, r, cacheStatus, requestTime, next)
 		}
 	}
 
-	return h.hit(w, r, entry)
+	cacheStatus.Hit = true
+	return h.hit(w, cacheStatus, requestTime, entry)
 }
 
 func (h *Handler) shouldBuffer(status int, _ http.Header) bool {
@@ -165,69 +113,37 @@ func (h *Handler) shouldBuffer(status int, _ http.Header) bool {
 	return status >= 200 && status < 300
 }
 
-func (h *Handler) notModified(w http.ResponseWriter, r *http.Request, e *cache.Entry) error {
-	h.hitHeaders(w, r, e)
+func (h *Handler) notModified(w http.ResponseWriter, cacheStatus headers.CacheStatus, requestTime time.Time, e *cache.Entry) error {
+	h.hitHeaders(w, cacheStatus, requestTime, e)
 	w.WriteHeader(http.StatusNotModified)
 	return nil
 }
 
-func (h *Handler) hitHeaders(w http.ResponseWriter, r *http.Request, e *cache.Entry) {
+func (h *Handler) hitHeaders(w http.ResponseWriter, cacheStatus headers.CacheStatus, requestTime time.Time, e *cache.Entry) {
 	hs := w.Header()
 	for i := range e.Headers {
 		hs.Add(e.Headers[i][0], e.Headers[i][1])
 	}
 
 	ttl := e.Expires.Sub(h.now()) + time.Duration(rand.IntN(int(h.Timing.TTLSplay)))
-	{
-		cacheStatus := getCacheStatus(r.Context())
-		cacheStatus.TTL = ttl
-		cacheStatus.Hit = true
-		hs.Add("Cache-Status", cacheStatus.String())
-	}
+	hs.Add("Cache-Status", cacheStatus.String())
 
-	{
-		expires := headers.Expires(getRequestTime(r.Context()).Add(ttl))
-		hs.Add("Expires", expires.String())
-	}
+	expires := headers.Expires(requestTime.Add(ttl))
+	hs.Add("Expires", expires.String())
 
-	{
-		age := headers.Age(getRequestTime(r.Context()).Sub(e.Date))
-		hs.Add("Age", age.String())
-	}
+	age := headers.Age(requestTime.Sub(e.Date))
+	hs.Add("Age", age.String())
 
 	if e.ETag != "" {
 		hs.Set("ETag", e.ETag)
 	}
-
-	w.Header().Set("Content-Length", strconv.Itoa(len(e.Body)))
 }
 
-func (h *Handler) hit(w http.ResponseWriter, r *http.Request, e *cache.Entry) error {
-	h.hitHeaders(w, r, e)
+func (h *Handler) hit(w http.ResponseWriter, cacheStatus headers.CacheStatus, requestTime time.Time, e *cache.Entry) error {
+	h.hitHeaders(w, cacheStatus, requestTime, e)
 	w.WriteHeader(e.Status)
 	rc := http.NewResponseController(w)
 	defer rc.Flush()
 	_, err := w.Write(e.Body)
-	return err
-}
-
-func (h *Handler) bypass(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	buf := bytes.NewBuffer(make([]byte, 0, 1024))
-	rec := caddyhttp.NewResponseRecorder(w, buf, h.shouldBuffer)
-	err := next.ServeHTTP(rec, r)
-	if err != nil {
-		return err
-	}
-
-	cacheStatus := getCacheStatus(r.Context())
-	rec.Header().Add("Cache-Status", cacheStatus.String())
-
-	w.WriteHeader(rec.Status())
-
-	if !rec.Buffered() {
-		return nil
-	}
-
-	_, err = buf.WriteTo(w)
 	return err
 }

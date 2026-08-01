@@ -43,3 +43,16 @@ func (w Wrapper[T]) Set(ctx context.Context, k string, v T) error {
 
 	return nil
 }
+
+func (w Wrapper[T]) Update(ctx context.Context, k string, v T) error {
+
+	err1 := w.inner.Update(ctx, k, v)
+	err2 := w.outer.Update(ctx, k, v)
+
+	// TODO: Less stupid error handling here
+	if err1 != nil && err2 != nil {
+		return errors.Join(err1, err2)
+	}
+
+	return nil
+}
