@@ -28,6 +28,13 @@ func (p Provider[T]) Set(_ context.Context, key string, value T) error {
 	return nil
 }
 
+// Update is a noop for the otter provider. With Otter, T lives in heap and is mutable, and caddy-cache operates
+// directly with values from Get, including for setting refreshed expiry etc. So actually invoking p.cache.Set in Update
+// would be redundant.
+func (p Provider[T]) Update(_ context.Context, _ string, _ T) error {
+	return nil
+}
+
 func NewProvider[T storage.Storable](cfg config.OtterConfig) (*Provider[T], error) {
 	c, err := otter.New(&otter.Options[string, T]{
 		MaximumWeight:   cfg.MemoryLimit,

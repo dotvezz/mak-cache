@@ -24,7 +24,6 @@ func (e *Entry) GetHeader(k string) (v []string) {
 }
 
 func (e *Entry) FromResponse(rec caddyhttp.ResponseRecorder) {
-	e.Body = append([]byte(nil), rec.Buffer().Bytes()...)
 	e.Status = rec.Status()
 	h := rec.Header()
 	for k := range h {

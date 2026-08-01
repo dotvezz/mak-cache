@@ -15,4 +15,5 @@ type Storable interface {
 type Provider[T Storable] interface {
 	Get(ctx context.Context, k string) (v T, err error)
 	Set(ctx context.Context, k string, v T) error
+	Update(ctx context.Context, k string, v T) error
 }

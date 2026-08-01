@@ -296,7 +296,14 @@ func (m *Metadata) MarshalTo(buf Writer) (err error) {
 	}
 
 	err = binary.Write(buf, binary.BigEndian, m.Expires.UnixMilli())
+	if err != nil {
+		return err
+	}
 	err = binary.Write(buf, binary.BigEndian, m.Date.UnixMilli())
+	if err != nil {
+		return err
+	}
+
 	return err
 }
 

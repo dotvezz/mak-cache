@@ -28,3 +28,11 @@ func (a *Generic) FromHeaders(v []string) {
 		a.vals[i] = strings.ToLower(a.vals[i])
 	}
 }
+
+func (a *Generic) Contains(v string) bool {
+	return slices.Contains(a.vals, v)
+}
+
+func (a *Generic) Empty() bool {
+	return len(a.vals) == 0
+}

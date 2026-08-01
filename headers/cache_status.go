@@ -11,12 +11,12 @@ type CacheStatus struct {
 	Hit bool
 
 	// Fwd reasons
-	FwdURIMiss     bool
-	FwdStale       bool
-	FwdVaryMiss    bool
-	FwdRequestMiss bool
-	FwdBypass      bool
-	FwdMethod      bool
+	FwdURIMiss  bool
+	FwdStale    bool
+	FwdVaryMiss bool
+	FwdRequest  bool
+	FwdBypass   bool
+	FwdMethod   bool
 
 	FwdStatus int
 	Stored    bool
@@ -42,7 +42,7 @@ func (cs *CacheStatus) String() string {
 			reason = "vary-miss"
 		case cs.FwdURIMiss:
 			reason = "uri-miss"
-		case cs.FwdRequestMiss:
+		case cs.FwdRequest:
 			reason = "request"
 		case cs.FwdBypass:
 			reason = "bypass"
