@@ -33,7 +33,7 @@ func (h *Handler) toUpstream(w http.ResponseWriter, r *http.Request, next caddyh
 	return e, err
 }
 
-func (h *Handler) backgroundRefresh(req *http.Request, entry *cache.Entry, cacheStatus headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) {
+func (h *Handler) backgroundRefresh(req *http.Request, entry *cache.Entry, cacheStatus *headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) {
 	// After it finishes writing downstream, caddy runs a deferred timeout cancel.
 	// Since we're running this in the background, that cancel would be a problem so we'll just ignore it here.
 	newCtx := context.WithoutCancel(req.Context())
@@ -51,16 +51,15 @@ func (h *Handler) backgroundRefresh(req *http.Request, entry *cache.Entry, cache
 	}()
 }
 
-func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) error {
+func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) error {
 	// We're holding on to a clone of the original request because we may need to reuse it, for example if the origin
 	// response has a Vary header.
 	// Because we're living in a Caddy handler, and upstream handlers may mutate the request, the original value of r
 	// is not safe for reuse.
 	rClone := r.Clone(r.Context())
 
-	key := cache.GenerateKey(r, h.Key, nil)
 	oneShot := responses.NewOneShot(w)
-	e, err, collapsed := h.singleflight.Do(key, func() (any, error) {
+	e, err, collapsed := h.singleflight.Do(cacheStatus.Key, func() (any, error) {
 		return h.toUpstream(oneShot, r, next)
 	})
 

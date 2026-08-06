@@ -35,8 +35,9 @@ type Handler struct {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) (err error) {
-	cacheStatus := headers.CacheStatus{}
 	requestTime := h.now()
+	cacheStatus := new(headers.CacheStatus)
+	resp := new(http.Response)
 
 	// TODO: configurable caching rules for not-traditionally-cacheable methods
 	if r.Method != http.MethodHead && r.Method != http.MethodGet {
@@ -53,6 +54,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	if !found {
 		cacheStatus.FwdURIMiss = true
 		return h.forward(w, r, cacheStatus, requestTime, next)
+	}
+
+	switch {
+	case !found:
+
 	}
 
 	cacheControl := headers.CacheControl{}
@@ -98,14 +104,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 
 		if !ifNoneMatch.Empty() {
 			if ifNoneMatch.Contains(entry.ETag) {
-				return h.notModified(w, cacheStatus, requestTime, entry)
+				resp.StatusCode = http.StatusNotModified
 			}
 			return h.forward(w, r, cacheStatus, requestTime, next)
 		}
 	}
 
 	cacheStatus.Hit = true
-	return h.hit(w, cacheStatus, requestTime, entry)
+	resp.Header.Add("Cache-Status", cacheStatus.String())
+	h.hitHeaders(requestTime, entry, resp)
+	w.WriteHeader(resp.StatusCode)
+	_, err = w.Write(entry.Body)
 }
 
 func (h *Handler) shouldBuffer(status int, _ http.Header) bool {
@@ -113,37 +122,19 @@ func (h *Handler) shouldBuffer(status int, _ http.Header) bool {
 	return status >= 200 && status < 300
 }
 
-func (h *Handler) notModified(w http.ResponseWriter, cacheStatus headers.CacheStatus, requestTime time.Time, e *cache.Entry) error {
-	h.hitHeaders(w, cacheStatus, requestTime, e)
-	w.WriteHeader(http.StatusNotModified)
-	return nil
-}
-
-func (h *Handler) hitHeaders(w http.ResponseWriter, cacheStatus headers.CacheStatus, requestTime time.Time, e *cache.Entry) {
-	hs := w.Header()
+func (h *Handler) hitHeaders(requestTime time.Time, e *cache.Entry, resp *http.Response) {
 	for i := range e.Headers {
-		hs.Add(e.Headers[i][0], e.Headers[i][1])
+		resp.Header.Add(e.Headers[i][0], e.Headers[i][1])
 	}
 
 	ttl := e.Expires.Sub(h.now()) + time.Duration(rand.IntN(int(h.Timing.TTLSplay)))
-	hs.Add("Cache-Status", cacheStatus.String())
-
 	expires := headers.Expires(requestTime.Add(ttl))
-	hs.Add("Expires", expires.String())
+	resp.Header.Add("Expires", expires.String())
 
 	age := headers.Age(requestTime.Sub(e.Date))
-	hs.Add("Age", age.String())
+	resp.Header.Set("Age", age.String())
 
 	if e.ETag != "" {
-		hs.Set("ETag", e.ETag)
+		resp.Header.Set("ETag", e.ETag)
 	}
-}
-
-func (h *Handler) hit(w http.ResponseWriter, cacheStatus headers.CacheStatus, requestTime time.Time, e *cache.Entry) error {
-	h.hitHeaders(w, cacheStatus, requestTime, e)
-	w.WriteHeader(e.Status)
-	rc := http.NewResponseController(w)
-	defer rc.Flush()
-	_, err := w.Write(e.Body)
-	return err
 }

@@ -49,7 +49,7 @@ func init() {
 
 func (h Handler) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.handlers.oauth_proxy",
+		ID:  "http.handlers.cache",
 		New: func() caddy.Module { return new(Handler) },
 	}
 }
