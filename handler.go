@@ -35,7 +35,7 @@ type Handler struct {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) (err error) {
-	cacheStatus := headers.CacheStatus{}
+	cacheStatus := new(headers.CacheStatus)
 	requestTime := h.now()
 
 	// TODO: configurable caching rules for not-traditionally-cacheable methods
@@ -100,12 +100,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			if ifNoneMatch.Contains(entry.ETag) {
 				return h.notModified(w, cacheStatus, requestTime, entry)
 			}
-			return h.forward(w, r, cacheStatus, requestTime, next)
+			return h.revalidate(w, r, entry, cacheStatus, requestTime, next)
 		}
 	}
 
 	cacheStatus.Hit = true
-	return h.hit(w, cacheStatus, requestTime, entry)
+	return h.replyWithEntry(w, cacheStatus, requestTime, entry)
 }
 
 func (h *Handler) shouldBuffer(status int, _ http.Header) bool {
@@ -113,13 +113,13 @@ func (h *Handler) shouldBuffer(status int, _ http.Header) bool {
 	return status >= 200 && status < 300
 }
 
-func (h *Handler) notModified(w http.ResponseWriter, cacheStatus headers.CacheStatus, requestTime time.Time, e *cache.Entry) error {
-	h.hitHeaders(w, cacheStatus, requestTime, e)
+func (h *Handler) notModified(w http.ResponseWriter, cacheStatus *headers.CacheStatus, requestTime time.Time, e *cache.Entry) error {
+	h.entryHeaders(w, cacheStatus, requestTime, e)
 	w.WriteHeader(http.StatusNotModified)
 	return nil
 }
 
-func (h *Handler) hitHeaders(w http.ResponseWriter, cacheStatus headers.CacheStatus, requestTime time.Time, e *cache.Entry) {
+func (h *Handler) entryHeaders(w http.ResponseWriter, cacheStatus *headers.CacheStatus, requestTime time.Time, e *cache.Entry) {
 	hs := w.Header()
 	for i := range e.Headers {
 		hs.Add(e.Headers[i][0], e.Headers[i][1])
@@ -139,8 +139,8 @@ func (h *Handler) hitHeaders(w http.ResponseWriter, cacheStatus headers.CacheSta
 	}
 }
 
-func (h *Handler) hit(w http.ResponseWriter, cacheStatus headers.CacheStatus, requestTime time.Time, e *cache.Entry) error {
-	h.hitHeaders(w, cacheStatus, requestTime, e)
+func (h *Handler) replyWithEntry(w http.ResponseWriter, cacheStatus *headers.CacheStatus, requestTime time.Time, e *cache.Entry) error {
+	h.entryHeaders(w, cacheStatus, requestTime, e)
 	w.WriteHeader(e.Status)
 	rc := http.NewResponseController(w)
 	defer rc.Flush()
