@@ -148,12 +148,26 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 	return hnd, err
 }
 
-func parseFromCustomHelper(h caddyfileHelper, c *config.Config) error {
+func parseFromCustomHelper(h caddyfileHelper, c *config.Config) (err error) {
 	for h.NextBlock(0) {
 		key := h.Val()
 		switch key {
-		case "ignore_vary_headers":
-			c.IgnoreVaryHeaders = h.RemainingArgs()
+		case "headers":
+			nesting := h.Nesting()
+			for h.NextBlock(nesting) {
+				subKey := h.Val()
+				switch subKey {
+				case "ignore_vary":
+					c.Headers.IgnoreVary = h.RemainingArgs()
+				case "ignore_origin_cache_control":
+					c.Headers.IgnoreOriginCacheControl, err = parseBoolArg(h)
+					if err != nil {
+						return err
+					}
+				default:
+					return h.Errf("unknown key configuration subkey %q", subKey)
+				}
+			}
 		case "timing":
 			if err := parseTimingConfig(h, &c.Timing); err != nil {
 				return err
@@ -172,7 +186,7 @@ func parseFromCustomHelper(h caddyfileHelper, c *config.Config) error {
 				statusCodes = append(statusCodes, code)
 			}
 			var t config.TimingConfig
-			if err := parseTimingConfig(h, &t); err != nil {
+			if err = parseTimingConfig(h, &t); err != nil {
 				return err
 			}
 			if c.StatusTimings == nil {
@@ -187,23 +201,20 @@ func parseFromCustomHelper(h caddyfileHelper, c *config.Config) error {
 				subKey := h.Val()
 				switch subKey {
 				case "disable":
-					val, err := parseBoolArg(h)
+					c.ETag.Disable, err = parseBoolArg(h)
 					if err != nil {
 						return err
 					}
-					c.ETag.Disable = val
 				case "crc32":
-					val, err := parseBoolArg(h)
+					c.ETag.CRC32, err = parseBoolArg(h)
 					if err != nil {
 						return err
 					}
-					c.ETag.CRC32 = val
 				case "sha256":
-					val, err := parseBoolArg(h)
+					c.ETag.SHA256, err = parseBoolArg(h)
 					if err != nil {
 						return err
 					}
-					c.ETag.SHA256 = val
 				default:
 					return h.Errf("unknown etag configuration subkey %q", subKey)
 				}
@@ -218,11 +229,10 @@ func parseFromCustomHelper(h caddyfileHelper, c *config.Config) error {
 				case "strip_query_params":
 					c.Key.StripQueryParams = h.RemainingArgs()
 				case "no_query_sort":
-					val, err := parseBoolArg(h)
+					c.Key.NoQuerySort, err = parseBoolArg(h)
 					if err != nil {
 						return err
 					}
-					c.Key.NoQuerySort = val
 				default:
 					return h.Errf("unknown key configuration subkey %q", subKey)
 				}
@@ -233,11 +243,10 @@ func parseFromCustomHelper(h caddyfileHelper, c *config.Config) error {
 				subKey := h.Val()
 				switch subKey {
 				case "disable":
-					val, err := parseBoolArg(h)
+					c.Coalesce.Disable, err = parseBoolArg(h)
 					if err != nil {
 						return err
 					}
-					c.Coalesce.Disable = val
 				default:
 					return h.Errf("unknown coalesce configuration subkey %q", subKey)
 				}
@@ -260,17 +269,15 @@ func parseFromCustomHelper(h caddyfileHelper, c *config.Config) error {
 				subKey := h.Val()
 				switch subKey {
 				case "disable":
-					val, err := parseBoolArg(h)
+					c.Refresh.Disable, err = parseBoolArg(h)
 					if err != nil {
 						return err
 					}
-					c.Refresh.Disable = val
 				case "timeout":
-					d, err := parseDurationArg(h)
+					c.Refresh.Timeout, err = parseDurationArg(h)
 					if err != nil {
 						return err
 					}
-					c.Refresh.Timeout = d
 				default:
 					return h.Errf("unknown refresh configuration subkey %q", subKey)
 				}
@@ -335,29 +342,26 @@ func parseDurationArg(h caddyfileHelper) (minitime.Duration, error) {
 	return minitime.Duration(d), nil
 }
 
-func parseTimingConfig(h caddyfileHelper, t *config.TimingConfig) error {
+func parseTimingConfig(h caddyfileHelper, t *config.TimingConfig) (err error) {
 	nesting := h.Nesting()
 	for h.NextBlock(nesting) {
 		subKey := h.Val()
 		switch subKey {
 		case "ttl":
-			d, err := parseDurationArg(h)
+			t.TTL, err = parseDurationArg(h)
 			if err != nil {
 				return err
 			}
-			t.TTL = d
 		case "max_stale":
-			d, err := parseDurationArg(h)
+			t.MaxStale, err = parseDurationArg(h)
 			if err != nil {
 				return err
 			}
-			t.MaxStale = d
 		case "ttl_splay":
-			d, err := parseDurationArg(h)
+			t.TTLSplay, err = parseDurationArg(h)
 			if err != nil {
 				return err
 			}
-			t.TTLSplay = d
 		default:
 			return h.Errf("unknown timing configuration subkey %q", subKey)
 		}

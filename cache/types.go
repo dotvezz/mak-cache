@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -14,6 +15,7 @@ type Entry struct {
 }
 
 func (e *Entry) GetHeader(k string) (v []string) {
+	k = http.CanonicalHeaderKey(k)
 	for _, h := range e.Headers {
 		if h[0] == k {
 			v = append(v, h[1])
@@ -25,6 +27,7 @@ func (e *Entry) GetHeader(k string) (v []string) {
 
 func (e *Entry) FromResponse(rec caddyhttp.ResponseRecorder) {
 	e.Status = rec.Status()
+	e.Body = rec.Buffer().Bytes()
 	h := rec.Header()
 	for k := range h {
 		for i := range h[k] {

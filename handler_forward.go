@@ -16,7 +16,7 @@ import (
 
 func (h *Handler) fwdUpstream(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) (e *cache.Entry, err error) {
 	e = new(cache.Entry)
-	buf := bytes.NewBuffer(e.Body)
+	buf := bytes.NewBuffer(make([]byte, 0, 1024))
 	rec := caddyhttp.NewResponseRecorder(w, buf, h.shouldBuffer)
 
 	err = next.ServeHTTP(rec, r)
@@ -51,8 +51,33 @@ func (h *Handler) backgroundRefresh(req *http.Request, entry *cache.Entry, cache
 	}()
 }
 
+func (h *Handler) handleUpstreamCacheControl(cc []string, m *cache.Metadata) (cacheable bool) {
+	if h.Config.Headers.IgnoreOriginCacheControl {
+		return true
+	}
+
+	cacheControl := headers.CacheControl{}
+	// Only load the most-recent (last in the slice) Cache-Control header
+	err := cacheControl.FromString(cc[len(cc)-1])
+	if err == nil {
+		// Only load Cache-Control into the metadata if we were able to successfully parse it
+		m.CacheControl = cacheControl.Directives()
+	}
+
+	if cacheControl.MaxAge > 0 {
+		m.Expires = time.Now().Add(cacheControl.MaxAge)
+	}
+
+	return cacheControl.Cacheable()
+}
+
 func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) error {
-	// We're holding on to a clone of the original request because we may need to reuse it, for example if the origin
+	// Even if we're handling a conditional request, if we're forwarding then we want to attempt to cache the full
+	// response instead of just passing the possible 304 down.
+	r.Header.Del("If-None-Match")
+	r.Header.Del("If-Modified-Since")
+
+	// We're holding on to a clone of the request because we may need to reuse it, for example if the origin
 	// response has a Vary header.
 	// Because we're living in a Caddy handler, and upstream handlers may mutate the request, the original value of r
 	// is not safe for reuse.
@@ -84,26 +109,13 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 	vary := headers.Vary{}
 	vary.FromHeaders(oneShot.Header().Values("Vary"))
 
-	m.Vary = vary.ValsWithout(h.IgnoreVaryHeaders)
+	m.Vary = vary.ValsWithout(h.Headers.IgnoreVary)
 	if slices.Contains(m.Vary, "*") {
 		cacheable = false
 	}
 
-	// TODO: Optionally override/disable upstream cache-control
 	if cc := oneShot.Header().Values("Cache-Control"); len(cc) > 0 {
-		cacheControl := headers.CacheControl{}
-		// Only load the most-recent (last in the slice) Cache-Control header
-		err = cacheControl.FromString(cc[len(cc)-1])
-		if err == nil {
-			// Only load Cache-Control into the metadata if we were able to successfully parse it
-			m.CacheControl = cacheControl.Directives()
-		}
-
-		if cacheControl.MaxAge > 0 {
-			m.Expires = time.Now().Add(cacheControl.MaxAge)
-		}
-
-		if !cacheControl.Cacheable() {
+		if !h.handleUpstreamCacheControl(cc, m) {
 			cacheable = false
 		}
 	}
@@ -124,6 +136,7 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 	if cacheable && err == nil {
 		if !h.ETag.Disable {
 			if etag := oneShot.Header().Get("ETag"); etag != "" {
+				// Get the etag header from upstream
 				entry.ETag = etag
 			} else {
 				if etagHeader := entry.GetHeader("ETag"); len(etagHeader) > 0 {

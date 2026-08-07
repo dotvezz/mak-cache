@@ -43,7 +43,7 @@ func TestGenerateEtag(t *testing.T) {
 	t.Run("MD5 (default)", func(t *testing.T) {
 		cfg := config.ETagConfig{}
 		sum := md5.Sum(entry.Body)
-		expected := hex.EncodeToString(sum[:])
+		expected := `"` + hex.EncodeToString(sum[:]) + `"`
 		if got := GenerateEtag(entry, cfg); got != expected {
 			t.Errorf("expected %q, got %q", expected, got)
 		}

@@ -12,7 +12,9 @@ import (
 
 func TestParseFromCustomHelper(t *testing.T) {
 	input := `cache {
-		ignore_vary_headers header1 header2
+		headers {
+			ignore_vary header1 header2
+		}
 		timing {
 			ttl 10s
 			max_stale 5m
@@ -58,10 +60,10 @@ func TestParseFromCustomHelper(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify IgnoreVaryHeaders
+	// Verify IgnoreVery
 	expectedVary := []string{"header1", "header2"}
-	if !reflect.DeepEqual(cfg.IgnoreVaryHeaders, expectedVary) {
-		t.Errorf("expected IgnoreVaryHeaders %v, got %v", expectedVary, cfg.IgnoreVaryHeaders)
+	if !reflect.DeepEqual(cfg.Headers.IgnoreVary, expectedVary) {
+		t.Errorf("expected Headers.IgnoreVary %v, got %v", expectedVary, cfg.Headers.IgnoreVary)
 	}
 
 	// Verify Timing

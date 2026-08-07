@@ -144,6 +144,7 @@ func (h *Handler) replyWithEntry(w http.ResponseWriter, cacheStatus *headers.Cac
 	w.WriteHeader(e.Status)
 	rc := http.NewResponseController(w)
 	defer rc.Flush()
-	_, err := w.Write(e.Body)
+	i, err := w.Write(e.Body)
+	_ = i
 	return err
 }
