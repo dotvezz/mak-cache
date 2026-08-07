@@ -125,10 +125,10 @@ func (h *Handler) hitHeaders(w http.ResponseWriter, cacheStatus headers.CacheSta
 		hs.Add(e.Headers[i][0], e.Headers[i][1])
 	}
 
-	ttl := e.Expires.Sub(h.now()) + time.Duration(rand.IntN(int(h.Timing.TTLSplay)))
+	cacheStatus.TTL = e.Expires.Sub(h.now()) + time.Duration(rand.IntN(int(h.Timing.TTLSplay)))
 	hs.Add("Cache-Status", cacheStatus.String())
 
-	expires := headers.Expires(requestTime.Add(ttl))
+	expires := headers.Expires(requestTime.Add(cacheStatus.TTL))
 	hs.Add("Expires", expires.String())
 
 	age := headers.Age(requestTime.Sub(e.Date))

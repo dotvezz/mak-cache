@@ -58,9 +58,8 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus he
 	// is not safe for reuse.
 	rClone := r.Clone(r.Context())
 
-	key := cache.GenerateKey(r, h.Key, nil)
 	oneShot := responses.NewOneShot(w)
-	e, err, collapsed := h.singleflight.Do(key, func() (any, error) {
+	e, err, collapsed := h.singleflight.Do(cacheStatus.Key, func() (any, error) {
 		return h.toUpstream(oneShot, r, next)
 	})
 
@@ -109,7 +108,7 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus he
 		}
 	}
 
-	err = h.setMetadata(r.Context(), key, m)
+	err = h.setMetadata(r.Context(), cacheStatus.Key, m)
 
 	if len(m.Vary) > 0 {
 		keyWithVary := cache.GenerateKey(r, h.Key, m.Vary)

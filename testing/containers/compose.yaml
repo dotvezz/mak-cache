@@ -8,8 +8,8 @@ services:
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile
     ports:
-      - 8080:8080
-      - 2019:2020
+      - 8081:8080
+      - 2021:2020
 
   caddy-souin:
     build:
@@ -27,7 +27,7 @@ services:
       - ./fileserver/Caddyfile:/etc/caddy/Caddyfile
       - ../files:/srv:ro
     ports:
-      - 8081:80
+      - 8084:80
 
   varnish:
     image: docker.io/varnish:fresh

@@ -4,7 +4,7 @@
 
     cache {
         timing {
-            ttl 20s
+            ttl 5m
             max_stale 200s
             ttl_splay 10s
         }
@@ -19,16 +19,8 @@
 }
 
 http://localhost:8080 {
-    route /get {
+    route * {
         cache
-        #        uri replace /get /about/
-        reverse_proxy https://httpbin.org
-    }
-
-    route /gitpush {
-        cache
-
-        uri replace /gitpush /about/
-        reverse_proxy https://gitpush--force.com
+        reverse_proxy localhost:8084 # the fileserver container from testing/containers
     }
 }
