@@ -132,7 +132,7 @@ func (h *Handler) hitHeaders(w http.ResponseWriter, cacheStatus headers.CacheSta
 	hs.Add("Expires", expires.String())
 
 	age := headers.Age(requestTime.Sub(e.Date))
-	hs.Add("Age", age.String())
+	hs.Set("Age", age.String())
 
 	if e.ETag != "" {
 		hs.Set("ETag", e.ETag)
