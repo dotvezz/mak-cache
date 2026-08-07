@@ -10,13 +10,13 @@ import (
 	"github.com/dotvezz/caddy-cache/minitime"
 )
 
-// ETagConfig holds the configuration for handling ETags. If enabled, ETags from upstream will be respected and missing
+// ETagConfig holds the configuration for handling ETags. If enabled, ETags from origin will be respected and missing
 // ETags will be generated on-the-fly before storing the cached response.
 // The default algorithm for hashing is MD5, however this can be overridden by setting either CRC32 or SHA256 to true.
 // CRC32 and SHA256 should be considered mutually exclusive and setting both to true is an unsupported configuration.
 type ETagConfig struct {
-	// Disable turns off all ETag features, including the utilization of ETag headers from upstream.
-	// In this configuration, ETag headers from upstream are still passed downstream, however, they are not stored or used fon conditional
+	// Disable turns off all ETag features, including the utilization of ETag headers from origin.
+	// In this configuration, ETag headers from origin are still passed downstream, however, they are not stored or used fon conditional
 	// request handling.
 	Disable bool `json:"disable"`
 
@@ -46,7 +46,7 @@ type CoalesceConfig struct {
 	// Disable disables coalescing of cache requests. Generally this is not recommended.
 	// Coalescing requests blocks concurrent requests until the first one completes, then multiplexes the response down
 	// to all waiting downstream connections. It is an important strategy for preventing cache stampedes and protecting
-	// upstream backends.
+	// origin backends.
 	Disable bool `json:"disable"`
 }
 
@@ -75,7 +75,7 @@ type TimingConfig struct {
 }
 
 type RefreshConfig struct {
-	// Disable disables refresh-while-stale features and forces requests to proxy upstream on stale instead.
+	// Disable disables refresh-while-stale features and forces requests to proxy to origin on stale instead.
 	Disable bool `json:"disable"`
 
 	// Timeout specifies the maximum duration to wait for an async background refresh. Zero will default to
@@ -89,6 +89,15 @@ type PrometheusConfig struct {
 	Prefix string `json:"prefix"`
 }
 
+type HeadersConfig struct {
+	// IgnoreVary specifies a list of headers to ignore when generating the cache key.
+	// By default, no Vary headers are ignored.
+	IgnoreVary []string `json:"ignore_vary"`
+
+	// IgnoreOriginCacheControl
+	IgnoreOriginCacheControl bool `json:"ignore_origin_cache_control"`
+}
+
 type Config struct {
 	Timing     TimingConfig     `json:"timing"`
 	ETag       ETagConfig       `json:"etag"`
@@ -96,6 +105,7 @@ type Config struct {
 	Coalesce   CoalesceConfig   `json:"coalesce"`
 	Refresh    RefreshConfig    `json:"refresh"`
 	Prometheus PrometheusConfig `json:"prometheus"`
+	Headers    HeadersConfig    `json:"headers"`
 
 	// StatusTimings allows negative caching for the given HTTP status codes, even if they are not typically cacheable
 	StatusTimings map[int]TimingConfig `json:"status_timings,omitempty"`
@@ -111,8 +121,4 @@ type Config struct {
 	// vary headers, ETag values, etc) in memory even if the cache entries themselves are kept on disk, in Redis, or in some other
 	// storage.
 	MetadataStorage []StorageConfig `json:"metadata_storage"`
-
-	// IgnoreVaryHeaders specifies a list of headers to ignore when generating the cache key.
-	// By default, no Vary headers are ignored.
-	IgnoreVaryHeaders []string `json:"ignore_vary_headers"`
 }

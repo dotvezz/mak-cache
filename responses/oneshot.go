@@ -15,7 +15,8 @@ func NewOneShot(inner http.ResponseWriter) *OneShot {
 		inner: inner,
 		buf:   bytes.NewBuffer([]byte{}),
 		Staged: http.Response{
-			Header: make(http.Header),
+			Header:     make(http.Header),
+			StatusCode: http.StatusBadGateway, // Default to 502 Bad Gateway for early-fire in error cases
 		},
 	}
 }

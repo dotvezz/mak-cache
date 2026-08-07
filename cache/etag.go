@@ -25,5 +25,5 @@ func GenerateEtag(e *Entry, cfg config.ETagConfig) string {
 	}
 
 	sum := md5.Sum(e.Body)
-	return hex.EncodeToString(sum[:])
+	return `"` + hex.EncodeToString(sum[:]) + `"`
 }
