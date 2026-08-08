@@ -4,7 +4,6 @@ go 1.25.1
 
 require (
 	github.com/caddyserver/caddy/v2 v2.11.4
-	github.com/dotvezz/smolid v1.0.3
 	github.com/maypok86/otter/v2 v2.3.0
 	golang.org/x/sync v0.20.0
 )
