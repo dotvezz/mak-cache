@@ -83,8 +83,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return h.forward(w, r, cacheStatus, requestTime, next)
 	}
 
-	if entry.Expires.Before(h.now()) {
-		if !h.Refresh.Disable && entry.Expires.Before(h.now().Add(cacheControl.StaleWhileRevalidate)) {
+	if entry.Expires.Before(requestTime) {
+		if !h.Refresh.Disable && entry.Expires.Add(cacheControl.StaleWhileRevalidate).After(requestTime) {
 			h.backgroundRefresh(r, entry, cacheStatus, requestTime, next)
 		} else {
 			cacheStatus.FwdStale = true
