@@ -45,6 +45,7 @@ func init() {
 
 	httpcaddyfile.RegisterHandlerDirective(moduleName, parseCaddyfile)
 	httpcaddyfile.RegisterGlobalOption(moduleName, registerGlobalOption)
+	httpcaddyfile.RegisterDirectiveOrder(moduleName, httpcaddyfile.Before, "rewrite")
 }
 
 func (h Handler) CaddyModule() caddy.ModuleInfo {
