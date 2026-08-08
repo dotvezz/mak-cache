@@ -55,29 +55,49 @@ func (h Handler) CaddyModule() caddy.ModuleInfo {
 }
 
 func (h *Handler) Provision(context caddy.Context) (err error) {
-	for _, cfg := range h.Config.Storage {
-		switch {
-		case cfg.Otter != nil:
-			if h.entryStorage == nil {
-				h.entryStorage, err = otter.NewProvider[*cache.Entry](*cfg.Otter)
-			} else {
-				var store2 storage.Provider[*cache.Entry]
-				store2, err = otter.NewProvider[*cache.Entry](*cfg.Otter)
-				h.entryStorage = storage.Wrap(h.entryStorage, store2)
+	if p, ok := storage.SharedStorageProviders[h.ConfigKey]; ok && p != nil {
+		// Try to see if there's a registered shared provider for the current config key. This would be if
+		// the config is defined in the global/server block of a Caddy file
+		h.entryStorage = p
+	} else {
+		for _, cfg := range h.Config.Storage {
+			switch {
+			case cfg.Otter != nil:
+				if h.entryStorage == nil {
+					h.entryStorage, err = otter.NewProvider[*cache.Entry](*cfg.Otter)
+				} else {
+					var store2 storage.Provider[*cache.Entry]
+					store2, err = otter.NewProvider[*cache.Entry](*cfg.Otter)
+					h.entryStorage = storage.Wrap(h.entryStorage, store2)
+				}
 			}
+		}
+
+		if _, ok = storage.SharedStorageProviders[h.ConfigKey]; ok {
+			storage.SharedStorageProviders[h.ConfigKey] = h.entryStorage
 		}
 	}
 
-	for _, cfg := range h.Config.MetadataStorage {
-		switch {
-		case cfg.Otter != nil:
-			if h.metadataStorage == nil {
-				h.metadataStorage, err = otter.NewProvider[*cache.Metadata](*cfg.Otter)
-			} else {
-				var store2 storage.Provider[*cache.Metadata]
-				store2, err = otter.NewProvider[*cache.Metadata](*cfg.Otter)
-				h.metadataStorage = storage.Wrap(h.metadataStorage, store2)
+	if p, ok := storage.SharedMetadataProviders[h.ConfigKey]; ok && p != nil {
+		// Try to see if there's a registered shared provider for the current config key. This would be if
+		// the config is defined in the global/server block of a Caddy file
+		h.metadataStorage = p
+	} else {
+		for _, cfg := range h.Config.MetadataStorage {
+			switch {
+			case cfg.Otter != nil:
+				if h.metadataStorage == nil {
+					h.metadataStorage, err = otter.NewProvider[*cache.Metadata](*cfg.Otter)
+				} else {
+					var store2 storage.Provider[*cache.Metadata]
+					store2, err = otter.NewProvider[*cache.Metadata](*cfg.Otter)
+					h.metadataStorage = storage.Wrap(h.metadataStorage, store2)
+				}
 			}
+		}
+
+		if _, ok = storage.SharedMetadataProviders[h.ConfigKey]; ok {
+			storage.SharedMetadataProviders[h.ConfigKey] = h.metadataStorage
 		}
 	}
 
@@ -141,6 +161,12 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 
 		if global, ok := existing.(map[string]config.Config)[hnd.ConfigKey]; ok {
 			hnd.Config = global
+
+			// If we were able to load a global config, then we also want to share the storage providers across
+			// directives which reference it, so we'll create map keys for the shared entry providers to use in
+			// Provision
+			storage.SharedStorageProviders[hnd.ConfigKey] = nil
+			storage.SharedMetadataProviders[hnd.ConfigKey] = nil
 		}
 	}
 
@@ -377,7 +403,7 @@ func parseStorageConfig(h caddyfileHelper) (config.StorageConfig, error) {
 	}
 	providerName := args[0]
 	switch providerName {
-	case "otter":
+	case "otter", "in-memory":
 		s.Otter = &config.OtterConfig{}
 		nesting := h.Nesting()
 		for h.NextBlock(nesting) {

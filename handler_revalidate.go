@@ -25,9 +25,7 @@ func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, entry *cach
 		ifNoneMatch := headers.IfNoneMatch{}
 		ifNoneMatch.FromHeaders(r.Header["If-None-Match"])
 
-		e2 := new(cache.Entry)
-		e2.Body = []byte{}
-		buf := bytes.NewBuffer(e2.Body)
+		buf := bytes.NewBuffer(make([]byte, 0, 1024))
 		rec := caddyhttp.NewResponseRecorder(w, buf, h.shouldBuffer)
 
 		err = next.ServeHTTP(rec, r)
@@ -39,13 +37,19 @@ func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, entry *cach
 			if rec.Status() == http.StatusNotModified {
 				entry.Date = requestTime
 				entry.Expires = requestTime.Add(time.Duration(h.Timing.TTL))
-				return true, nil
+				err = h.updateEntry(r.Context(), cacheStatus.Key, entry)
+				if err != nil {
+					return false, err
+				}
+
+				err = h.setMetadata(r.Context(), cacheStatus.Key, &entry.Metadata)
+				return true, err
 			}
 
 			return false, errNotBuffered
 		}
 
-		e2.FromResponse(rec)
+		entry.FromResponse(rec)
 
 		if err != nil {
 			if errors.Is(err, errNotBuffered) {
@@ -92,7 +96,7 @@ func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, entry *cach
 			}
 
 			keyWithVary := cache.GenerateKey(rClone, h.Key, m.Vary)
-			err = h.setEntry(r.Context(), keyWithVary, entry)
+			err = h.updateEntry(r.Context(), keyWithVary, entry)
 			cacheStatus.Stored = err == nil
 		}
 		return false, nil
