@@ -2,10 +2,12 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/dotvezz/caddy-cache/cache"
+	"github.com/dotvezz/caddy-cache/storage"
 )
 
 func (h *Handler) getMetadata(ctx context.Context, key string) (m *cache.Metadata, found bool) {
@@ -22,7 +24,7 @@ func (h *Handler) getMetadata(ctx context.Context, key string) (m *cache.Metadat
 	}
 
 	found = err == nil
-	if err != nil {
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		h.Error("getMetadata",
 			slog.String("key", key),
 			slog.String("error", err.Error()),
