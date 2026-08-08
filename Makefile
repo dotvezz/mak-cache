@@ -24,3 +24,7 @@ build-containers:
 
 loadtest:
 	go tool k6 run ./testing/k6/stress.ts
+
+e2e:
+	go tool k6 run ./testing/k6/e2e.ts
+

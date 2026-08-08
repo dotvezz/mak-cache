@@ -11,6 +11,25 @@ services:
       - 8081:8080
       - 2021:2020
 
+  caddy-e2e:
+    build:
+      context: ../../
+      dockerfile: testing/containers/caddy/Containerfile
+    volumes:
+      - ./e2e/Caddyfile:/etc/caddy/Caddyfile
+    ports:
+      - 8086:8080
+      - 2022:2020
+
+  mock-origin:
+    build:
+      context: ../../
+      dockerfile: testing/containers/mock-origin/Containerfile
+    volumes:
+      - ../mock-responses:/srv:ro
+    ports:
+      - 8085:8080
+
   caddy-souin:
     build:
       context: ../../

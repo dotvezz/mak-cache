@@ -4,7 +4,9 @@ go 1.25.1
 
 require (
 	github.com/caddyserver/caddy/v2 v2.11.4
+	github.com/dotvezz/smolid v1.0.3
 	github.com/maypok86/otter/v2 v2.3.0
+	golang.org/x/sync v0.20.0
 )
 
 require (
@@ -197,7 +199,6 @@ require (
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260409153401-be6f6cb8b1fa // indirect
 	golang.org/x/term v0.43.0 // indirect
