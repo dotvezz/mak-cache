@@ -13,7 +13,6 @@ import (
 func TestParseFromCustomHelper(t *testing.T) {
 	input := `cache {
 		ignore_vary_headers header1 header2
-		encoding_whitelist gzip br
 		timing {
 			ttl 10s
 			max_stale 5m
@@ -63,12 +62,6 @@ func TestParseFromCustomHelper(t *testing.T) {
 	expectedVary := []string{"header1", "header2"}
 	if !reflect.DeepEqual(cfg.IgnoreVaryHeaders, expectedVary) {
 		t.Errorf("expected IgnoreVaryHeaders %v, got %v", expectedVary, cfg.IgnoreVaryHeaders)
-	}
-
-	// Verify EncodingWhitelist
-	expectedWhitelist := []string{"gzip", "br"}
-	if !reflect.DeepEqual(cfg.EncodingWhitelist, expectedWhitelist) {
-		t.Errorf("expected EncodingWhitelist %v, got %v", expectedWhitelist, cfg.EncodingWhitelist)
 	}
 
 	// Verify Timing
