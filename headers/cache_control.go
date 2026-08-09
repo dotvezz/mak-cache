@@ -9,6 +9,7 @@ import (
 
 type CacheControl struct {
 	MaxAge               time.Duration
+	SMaxAge              time.Duration
 	StaleWhileRevalidate time.Duration
 	MustRevalidate       bool
 	ProxyRevalidate      bool
@@ -42,6 +43,14 @@ func (cc *CacheControl) FromDirectives(ds []string) (err error) {
 			cc.MaxAge, err = time.ParseDuration(v + "s")
 			if err != nil {
 				return fmt.Errorf("invalid max-age: %s, %v", d, err)
+			}
+		case "s-maxage":
+			if !ok {
+				return fmt.Errorf("invalid s-maxage: %s", d)
+			}
+			cc.SMaxAge, err = time.ParseDuration(v + "s")
+			if err != nil {
+				return fmt.Errorf("invalid s-maxage: %s, %v", d, err)
 			}
 		case "stale-while-revalidate":
 			if !ok {
@@ -85,6 +94,10 @@ func (cc *CacheControl) Directives() (ds []string) {
 
 	if cc.MaxAge > 0 {
 		ds = append(ds, "max-age="+strconv.Itoa(int(cc.MaxAge.Seconds())))
+	}
+
+	if cc.SMaxAge > 0 {
+		ds = append(ds, "s-maxage="+strconv.Itoa(int(cc.SMaxAge.Seconds())))
 	}
 
 	if cc.StaleWhileRevalidate > 0 {

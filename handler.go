@@ -84,7 +84,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	}
 
 	if entry.Expires.Before(requestTime) {
-		if !h.Refresh.Disable && entry.Expires.Add(cacheControl.StaleWhileRevalidate).After(requestTime) {
+		maxStale := time.Duration(h.Timing.MaxStale)
+		if cacheControl.StaleWhileRevalidate > 0 {
+			maxStale = cacheControl.StaleWhileRevalidate
+		}
+		if !h.Refresh.Disable && entry.Expires.Add(maxStale).After(requestTime) {
 			h.backgroundRefresh(r, entry, cacheStatus, requestTime, next)
 		} else {
 			cacheStatus.FwdStale = true
@@ -102,6 +106,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			}
 			return h.revalidate(w, r, entry, cacheStatus, requestTime, next)
 		}
+	}
+
+	if cacheControl.NoCache {
+		return h.revalidate(w, r, entry, cacheStatus, requestTime, next)
 	}
 
 	cacheStatus.Hit = true
@@ -144,7 +152,6 @@ func (h *Handler) replyWithEntry(w http.ResponseWriter, cacheStatus *headers.Cac
 	w.WriteHeader(e.Status)
 	rc := http.NewResponseController(w)
 	defer rc.Flush()
-	i, err := w.Write(e.Body)
-	_ = i
+	_, err := w.Write(e.Body)
 	return err
 }

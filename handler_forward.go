@@ -64,8 +64,10 @@ func (h *Handler) handleUpstreamCacheControl(cc []string, m *cache.Metadata) (ca
 		m.CacheControl = cacheControl.Directives()
 	}
 
-	if cacheControl.MaxAge > 0 {
-		m.Expires = time.Now().Add(cacheControl.MaxAge)
+	if cacheControl.SMaxAge > 0 {
+		m.Expires = h.now().Add(cacheControl.SMaxAge)
+	} else if cacheControl.MaxAge > 0 {
+		m.Expires = h.now().Add(cacheControl.MaxAge)
 	}
 
 	return cacheControl.Cacheable()
