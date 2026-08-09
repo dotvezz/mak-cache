@@ -5,34 +5,42 @@ import (
 	"strings"
 )
 
+type CaseSensitive struct {
+	Generic
+}
+
+func (h *CaseSensitive) FromHeaders(v []string) {
+	h.vals = v
+}
+
 type Sorted struct {
 	Generic
 }
 
-func (a *Sorted) FromHeaders(v []string) {
-	a.Generic.FromHeaders(v)
-	slices.Sort(a.vals)
+func (h *Sorted) FromHeaders(v []string) {
+	h.Generic.FromHeaders(v)
+	slices.Sort(h.vals)
 }
 
 type Generic struct {
 	vals []string
 }
 
-func (a *Generic) String() string {
-	return strings.Join(a.vals, ", ")
+func (h *Generic) String() string {
+	return strings.Join(h.vals, ", ")
 }
 
-func (a *Generic) FromHeaders(v []string) {
-	a.vals = v
-	for i := range a.vals {
-		a.vals[i] = strings.ToLower(a.vals[i])
+func (h *Generic) FromHeaders(v []string) {
+	h.vals = v
+	for i := range h.vals {
+		h.vals[i] = strings.ToLower(h.vals[i])
 	}
 }
 
-func (a *Generic) Contains(v string) bool {
-	return slices.Contains(a.vals, v)
+func (h *Generic) Contains(v string) bool {
+	return slices.Contains(h.vals, v)
 }
 
-func (a *Generic) Empty() bool {
-	return len(a.vals) == 0
+func (h *Generic) Empty() bool {
+	return len(h.vals) == 0
 }

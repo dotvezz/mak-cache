@@ -29,6 +29,7 @@ func (e *Entry) FromResponse(rec caddyhttp.ResponseRecorder) {
 	e.Status = rec.Status()
 	e.Body = rec.Buffer().Bytes()
 	h := rec.Header()
+	e.Headers = [][2]string{}
 	for k := range h {
 		for i := range h[k] {
 			e.Headers = append(e.Headers, [2]string{k, h[k][i]})

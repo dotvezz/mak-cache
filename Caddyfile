@@ -5,14 +5,13 @@
     cache {
         timing {
             ttl 5s
-            max_stale 1s
             ttl_splay 10s
         }
 
-        metadata_storage otter {
+        metadata_storage in-memory {
             memory_limit 268435456 # 256mb
         }
-        storage otter {
+        storage in-memory {
             memory_limit 268435456 # 256mb
         }
     }
@@ -21,6 +20,6 @@
 http://localhost:8080 {
     route * {
         cache
-        reverse_proxy localhost:8084 # the fileserver container from testing/containers
+        reverse_proxy localhost:8085
     }
 }
