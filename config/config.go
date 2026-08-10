@@ -94,8 +94,17 @@ type HeadersConfig struct {
 	// By default, no Vary headers are ignored.
 	IgnoreVary []string `json:"ignore_vary"`
 
-	// IgnoreOriginCacheControl
+	// IgnoreOriginCacheControl sets handler to ignore origin cache control headers entirely, applying the configured
+	// cache and timing settings even if the origin requests otherwise.
+	// While this is useful, it may be undesirable in some cases where the origin cache control headers are important.
+	// If the origin service is a third-party vendor, enforcing cache control headers may be against your license
+	// terms, for example.
 	IgnoreOriginCacheControl bool `json:"ignore_origin_cache_control"`
+
+	// IgnoreClientCacheControl sets the handler to ignore request cache control headers entirely, applying the
+	// configured cache and timing settings even if the client requests otherwise.
+	// Compared to IgnoreOriginCacheControl, this is rarely problematic but still not considered a "sane default."
+	IgnoreClientCacheControl bool `json:"ignore_client_cache_control"`
 }
 
 type Config struct {

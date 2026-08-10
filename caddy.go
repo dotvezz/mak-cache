@@ -191,6 +191,11 @@ func parseFromCustomHelper(h caddyfileHelper, c *config.Config) (err error) {
 					if err != nil {
 						return err
 					}
+				case "ignore_client_cache_control":
+					c.Headers.IgnoreClientCacheControl, err = parseBoolArg(h)
+					if err != nil {
+						return err
+					}
 				default:
 					return h.Errf("unknown key configuration subkey %q", subKey)
 				}
@@ -339,6 +344,8 @@ func parseFromCustomHelper(h caddyfileHelper, c *config.Config) (err error) {
 	return nil
 }
 
+// parseBoolArg parses a boolean argument from the caddyfile.
+// If there are no args, it assumes the intended value is `true`.
 func parseBoolArg(h caddyfileHelper) (bool, error) {
 	args := h.RemainingArgs()
 	if len(args) == 0 {

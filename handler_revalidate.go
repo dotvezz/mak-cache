@@ -72,10 +72,8 @@ func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, entry *cach
 			cacheable = false
 		}
 
-		if cc := rec.Header().Values("Cache-Control"); len(cc) > 0 {
-			if !h.handleUpstreamCacheControl(cc, m) {
-				cacheable = false
-			}
+		if !h.handleOriginCacheControl(rClone.Header, m, rec.Status()) {
+			cacheable = false
 		}
 
 		err = h.setMetadata(r.Context(), cacheStatus.Key, m)

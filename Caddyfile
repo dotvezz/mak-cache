@@ -1,25 +1,25 @@
 {
-    debug
-    metrics
+	debug
+	metrics
 
-    cache {
-        timing {
-            ttl 5s
-            ttl_splay 10s
-        }
+	cache {
+		timing {
+			ttl 5s
+			ttl_splay 10s
+		}
 
-        metadata_storage in-memory {
-            memory_limit 268435456 # 256mb
-        }
-        storage in-memory {
-            memory_limit 268435456 # 256mb
-        }
-    }
+		metadata_storage in-memory {
+			memory_limit 268435456 # 256mb
+		}
+		storage in-memory {
+			memory_limit 268435456 # 256mb
+		}
+	}
 }
 
 http://localhost:8080 {
-    route * {
-        cache
-        reverse_proxy localhost:8085
-    }
+	route * {
+		cache
+		reverse_proxy localhost:8085
+	}
 }
