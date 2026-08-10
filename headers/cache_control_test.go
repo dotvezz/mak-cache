@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+func ptr[T any](v T) *T {
+	return &v
+}
+
 func TestCacheControl_FromDirectives(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -16,12 +20,12 @@ func TestCacheControl_FromDirectives(t *testing.T) {
 		{
 			name: "max-age",
 			ds:   []string{"max-age=60"},
-			want: CacheControl{MaxAge: 60 * time.Second},
+			want: CacheControl{MaxAge: ptr(60 * time.Second)},
 		},
 		{
 			name: "stale-while-revalidate",
 			ds:   []string{"stale-while-revalidate=30"},
-			want: CacheControl{StaleWhileRevalidate: 30 * time.Second},
+			want: CacheControl{StaleWhileRevalidate: ptr(30 * time.Second)},
 		},
 		{
 			name: "must-revalidate",
@@ -57,8 +61,8 @@ func TestCacheControl_FromDirectives(t *testing.T) {
 			name: "combined",
 			ds:   []string{"public", "max-age=3600", "stale-while-revalidate=600", "must-revalidate"},
 			want: CacheControl{
-				MaxAge:               3600 * time.Second,
-				StaleWhileRevalidate: 600 * time.Second,
+				MaxAge:               ptr(3600 * time.Second),
+				StaleWhileRevalidate: ptr(600 * time.Second),
 				MustRevalidate:       true,
 				Private:              false,
 			},
@@ -97,12 +101,12 @@ func TestCacheControl_Directives(t *testing.T) {
 	}{
 		{
 			name: "max-age",
-			cc:   CacheControl{MaxAge: 60 * time.Second},
+			cc:   CacheControl{MaxAge: ptr(60 * time.Second)},
 			want: []string{"public", "max-age=60"},
 		},
 		{
 			name: "stale-while-revalidate",
-			cc:   CacheControl{StaleWhileRevalidate: 30 * time.Second},
+			cc:   CacheControl{StaleWhileRevalidate: ptr(30 * time.Second)},
 			want: []string{"public", "stale-while-revalidate=30"},
 		},
 		{
@@ -113,8 +117,8 @@ func TestCacheControl_Directives(t *testing.T) {
 		{
 			name: "combined",
 			cc: CacheControl{
-				MaxAge:               3600 * time.Second,
-				StaleWhileRevalidate: 600 * time.Second,
+				MaxAge:               ptr(3600 * time.Second),
+				StaleWhileRevalidate: ptr(600 * time.Second),
 				MustRevalidate:       true,
 				NoCache:              true,
 			},

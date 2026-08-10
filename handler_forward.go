@@ -51,26 +51,42 @@ func (h *Handler) backgroundRefresh(req *http.Request, entry *cache.Entry, cache
 	}()
 }
 
-func (h *Handler) handleUpstreamCacheControl(cc []string, m *cache.Metadata) (cacheable bool) {
-	if h.Config.Headers.IgnoreOriginCacheControl {
-		return true
+func (h *Handler) handleOriginCacheControl(hdr http.Header, m *cache.Metadata, status int) (cacheable bool) {
+	if cc := hdr.Values("Cache-Control"); len(cc) > 0 {
+		if h.Config.Headers.IgnoreOriginCacheControl {
+			return true
+		}
+
+		cacheControl := headers.CacheControl{}
+		// Only load the most-recent (last in the slice) Cache-Control header
+		err := cacheControl.FromString(cc[len(cc)-1])
+		if err == nil {
+			// Only load Cache-Control into the metadata if we were able to successfully parse it
+			m.CacheControl = cacheControl.Directives()
+		}
+
+		if cacheControl.SMaxAge != nil {
+			m.Expires = h.now().Add(*cacheControl.SMaxAge)
+		} else if cacheControl.MaxAge != nil {
+			m.Expires = h.now().Add(*cacheControl.MaxAge)
+		}
+
+		return cacheControl.Cacheable(true)
 	}
 
-	cacheControl := headers.CacheControl{}
-	// Only load the most-recent (last in the slice) Cache-Control header
-	err := cacheControl.FromString(cc[len(cc)-1])
-	if err == nil {
-		// Only load Cache-Control into the metadata if we were able to successfully parse it
-		m.CacheControl = cacheControl.Directives()
+	if exps := hdr.Get("Expires"); exps != "" {
+		expires := headers.Expires{}
+		err := expires.FromString(exps)
+		if err == nil {
+			m.Expires = time.Time(expires)
+		} else {
+			return false
+		}
 	}
 
-	if cacheControl.SMaxAge > 0 {
-		m.Expires = h.now().Add(cacheControl.SMaxAge)
-	} else if cacheControl.MaxAge > 0 {
-		m.Expires = h.now().Add(cacheControl.MaxAge)
-	}
-
-	return cacheControl.Cacheable()
+	// From RFC 9110 15.1
+	heuristicallyCacheable := []int{200, 203, 204, 206, 300, 301, 308, 404, 405, 410, 414, 501}
+	return slices.Contains(heuristicallyCacheable, status)
 }
 
 func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) error {
@@ -93,6 +109,7 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 	})
 
 	if err != nil {
+		oneShot.Header().Add("Cache-Status", cacheStatus.String())
 		_ = oneShot.Fire()
 		if !errors.Is(err, errNotBuffered) {
 			return err
@@ -116,10 +133,8 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 		cacheable = false
 	}
 
-	if cc := oneShot.Header().Values("Cache-Control"); len(cc) > 0 {
-		if !h.handleUpstreamCacheControl(cc, m) {
-			cacheable = false
-		}
+	if !h.handleOriginCacheControl(oneShot.Header(), m, entry.Status) {
+		cacheable = false
 	}
 
 	err = h.setMetadata(r.Context(), cacheStatus.Key, m)

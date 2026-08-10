@@ -31,6 +31,10 @@ type OneShot struct {
 	fired bool
 }
 
+func (o *OneShot) Status() int {
+	return o.Staged.StatusCode
+}
+
 func (o *OneShot) Reset() {
 	o.Staged = http.Response{
 		Header: make(http.Header)}

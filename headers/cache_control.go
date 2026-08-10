@@ -8,9 +8,9 @@ import (
 )
 
 type CacheControl struct {
-	MaxAge               time.Duration
-	SMaxAge              time.Duration
-	StaleWhileRevalidate time.Duration
+	MaxAge               *time.Duration
+	SMaxAge              *time.Duration
+	StaleWhileRevalidate *time.Duration
 	MustRevalidate       bool
 	ProxyRevalidate      bool
 	Private              bool
@@ -40,7 +40,8 @@ func (cc *CacheControl) FromDirectives(ds []string) (err error) {
 			if !ok {
 				return fmt.Errorf("invalid max-age: %s", d)
 			}
-			cc.MaxAge, err = time.ParseDuration(v + "s")
+			dur, err := time.ParseDuration(v + "s")
+			cc.MaxAge = &dur
 			if err != nil {
 				return fmt.Errorf("invalid max-age: %s, %v", d, err)
 			}
@@ -48,7 +49,8 @@ func (cc *CacheControl) FromDirectives(ds []string) (err error) {
 			if !ok {
 				return fmt.Errorf("invalid s-maxage: %s", d)
 			}
-			cc.SMaxAge, err = time.ParseDuration(v + "s")
+			dur, err := time.ParseDuration(v + "s")
+			cc.SMaxAge = &dur
 			if err != nil {
 				return fmt.Errorf("invalid s-maxage: %s, %v", d, err)
 			}
@@ -56,7 +58,8 @@ func (cc *CacheControl) FromDirectives(ds []string) (err error) {
 			if !ok {
 				return fmt.Errorf("invalid stale-while-revalidate: %s", d)
 			}
-			cc.StaleWhileRevalidate, err = time.ParseDuration(v + "s")
+			dur, err := time.ParseDuration(v + "s")
+			cc.StaleWhileRevalidate = &dur
 			if err != nil {
 				return fmt.Errorf("invalid stale-while-revalidate: %s, %v", d, err)
 			}
@@ -92,15 +95,15 @@ func (cc *CacheControl) Directives() (ds []string) {
 		ds = append(ds, "public")
 	}
 
-	if cc.MaxAge > 0 {
+	if cc.MaxAge != nil {
 		ds = append(ds, "max-age="+strconv.Itoa(int(cc.MaxAge.Seconds())))
 	}
 
-	if cc.SMaxAge > 0 {
+	if cc.SMaxAge != nil {
 		ds = append(ds, "s-maxage="+strconv.Itoa(int(cc.SMaxAge.Seconds())))
 	}
 
-	if cc.StaleWhileRevalidate > 0 {
+	if cc.StaleWhileRevalidate != nil {
 		ds = append(ds, "stale-while-revalidate="+strconv.Itoa(int(cc.StaleWhileRevalidate.Seconds())))
 	}
 
@@ -115,6 +118,10 @@ func (cc *CacheControl) Directives() (ds []string) {
 	return ds
 }
 
-func (cc *CacheControl) Cacheable() bool {
-	return !(cc.NoStore || cc.Private)
+func (cc *CacheControl) Cacheable(isResponse bool) bool {
+	if isResponse {
+		return !(cc.NoStore || cc.Private)
+	}
+
+	return !(cc.NoStore || cc.NoCache)
 }

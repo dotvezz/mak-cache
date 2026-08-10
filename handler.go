@@ -38,6 +38,29 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	cacheStatus := new(headers.CacheStatus)
 	requestTime := h.now()
 
+	reqCC := headers.CacheControl{}
+	{
+		cc := r.Header.Values("Cache-Control")
+		if len(cc) > 0 {
+			err = reqCC.FromString(cc[len(cc)-1])
+			if err != nil {
+				h.Info("Request Cache-Control",
+					slog.String("error", err.Error()),
+					slog.String("Cache-Control", cc[len(cc)-1]),
+				)
+				// If there was some error parsing Cache-Control, we'll just ignore/strip it and continue
+				reqCC = headers.CacheControl{}
+				r.Header.Del("Cache-Control")
+			}
+		}
+	}
+
+	if !reqCC.Cacheable(false) {
+		cacheStatus.FwdBypass = true
+		w.Header().Add("Cache-Status", cacheStatus.String())
+		return next.ServeHTTP(w, r)
+	}
+
 	// TODO: configurable caching rules for not-traditionally-cacheable methods
 	if r.Method != http.MethodHead && r.Method != http.MethodGet {
 		cacheStatus.FwdMethod = true
@@ -55,13 +78,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return h.forward(w, r, cacheStatus, requestTime, next)
 	}
 
-	cacheControl := headers.CacheControl{}
-	err = cacheControl.FromDirectives(meta.CacheControl)
+	respCC := headers.CacheControl{}
+	err = respCC.FromDirectives(meta.CacheControl)
 	if err != nil {
 		h.Info("Cache-Control", slog.String("error", err.Error()))
 	}
 
-	if slices.Contains(meta.Vary, "*") || !cacheControl.Cacheable() {
+	if slices.Contains(meta.Vary, "*") || !respCC.Cacheable(true) {
 		cacheStatus.FwdBypass = true
 		w.Header().Add("Cache-Status", cacheStatus.String())
 		return next.ServeHTTP(w, r)
@@ -85,8 +108,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 
 	if entry.Expires.Before(requestTime) {
 		maxStale := time.Duration(h.Timing.MaxStale)
-		if cacheControl.StaleWhileRevalidate > 0 {
-			maxStale = cacheControl.StaleWhileRevalidate
+		if respCC.StaleWhileRevalidate != nil {
+			maxStale = *respCC.StaleWhileRevalidate
 		}
 		if !h.Refresh.Disable && entry.Expires.Add(maxStale).After(requestTime) {
 			h.backgroundRefresh(r, entry, cacheStatus, requestTime, next)
@@ -94,6 +117,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			cacheStatus.FwdStale = true
 			return h.forward(w, r, cacheStatus, requestTime, next)
 		}
+	}
+
+	if reqCC.MaxAge != nil && entry.Date.Add(*reqCC.MaxAge).Before(requestTime) {
+		cacheStatus.FwdStale = true
+		return h.forward(w, r, cacheStatus, requestTime, next)
 	}
 
 	{
@@ -108,7 +136,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		}
 	}
 
-	if cacheControl.NoCache {
+	if respCC.NoCache {
 		return h.revalidate(w, r, entry, cacheStatus, requestTime, next)
 	}
 
@@ -116,8 +144,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	return h.replyWithEntry(w, cacheStatus, requestTime, entry)
 }
 
-func (h *Handler) shouldBuffer(status int, _ http.Header) bool {
-	// TODO: Handle negative caching
+// TODO: Handle Authorization Header for RFC 9111
+func (h *Handler) shouldBuffer(status int, headers http.Header) bool {
+	cacheable := h.handleOriginCacheControl(headers, &cache.Metadata{}, status)
+	if cacheable {
+		return true
+	}
+
 	return status >= 200 && status < 300
 }
 
@@ -137,7 +170,7 @@ func (h *Handler) entryHeaders(w http.ResponseWriter, cacheStatus *headers.Cache
 	hs.Add("Cache-Status", cacheStatus.String())
 
 	expires := headers.Expires(requestTime.Add(cacheStatus.TTL))
-	hs.Add("Expires", expires.String())
+	hs.Set("Expires", expires.String())
 
 	age := headers.Age(requestTime.Sub(e.Date))
 	hs.Set("Age", age.String())
