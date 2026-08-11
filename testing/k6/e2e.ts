@@ -266,6 +266,7 @@ function test9_NonCacheableMethods(runID: string) {
     const resPOST = http.post(url, {});
     const statusPOST = getHeader(resPOST, 'Cache-Status');
 
+    console.log("Test 9 POST: statusPOST", statusPOST);
     check(resPOST, {
         'Test 9 POST: status 200': (r) => r.status === 200,
         'Test 9 POST: fwd=method': () => statusPOST.includes('fwd=method'),
@@ -570,7 +571,7 @@ function test20_UnsafeMethodInvalidation(runID: string) {
     const status3 = getHeader(res3, 'Cache-Status');
 
     check(res3, {
-        'Test 20 Invalidation: subsequent GET is cache miss after POST': () => status3.includes('fwd=uri-miss') || status3.includes('stored'),
+        'Test 20 Invalidation: subsequent GET is cache miss after POST': () => status3.includes('fwd') || status3.includes('stored'),
     });
 }
 

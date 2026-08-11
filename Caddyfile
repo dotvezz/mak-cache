@@ -4,7 +4,7 @@
 
 	cache {
 		timing {
-			ttl 5s
+			ttl 100s
 			ttl_splay 10s
 		}
 
