@@ -101,15 +101,15 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 	// is not safe for reuse.
 	rClone := r.Clone(r.Context())
 
+	oneShot := responses.NewOneShot(w)
 	var e any
 	var err error
-	oneShot := responses.NewOneShot(w)
 
 	e, err, cacheStatus.Collapsed = h.singleflight.Do(cacheStatus.Key, func() (any, error) {
 		return h.fwdUpstream(oneShot, r, next)
 	})
 	if err != nil {
-		w.Header().Set("Cache-Status", cacheStatus.String())
+		oneShot.Header().Set("Cache-Status", cacheStatus.String())
 		_ = oneShot.Fire()
 		if !errors.Is(err, errNotBuffered) {
 			return err
@@ -126,13 +126,13 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 
 	cacheable := true
 	vary := headers.Vary{}
-	vary.FromHeaders(w.Header().Values("Vary"))
+	vary.FromHeaders(oneShot.Header().Values("Vary"))
 	m.Vary = vary.ValsWithout(h.Headers.IgnoreVary)
 	if slices.Contains(m.Vary, "*") {
 		cacheable = false
 	}
 
-	if !h.handleOriginCacheControl(w.Header(), m, entry.Status) {
+	if !h.handleOriginCacheControl(oneShot.Header(), m, entry.Status) {
 		cacheable = false
 	}
 
