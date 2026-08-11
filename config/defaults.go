@@ -14,7 +14,7 @@ import "time"
 
 var (
 	// defaultCacheKeyComponents is the default list of cache key components to include in the cache key.
-	defaultCacheKeyComponents = []string{"method", "path", "query"}
+	defaultCacheKeyComponents = []string{"host", "path", "query"}
 	defaultRefreshTimeout     = time.Second * 30
 )
 

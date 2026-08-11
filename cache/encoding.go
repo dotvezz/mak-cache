@@ -95,6 +95,15 @@ func encodeStringSlice(buf Writer, ss []string) (err error) {
 	return err
 }
 
+func encodeBool(buf Writer, b bool) (err error) {
+	var i uint8
+	if b {
+		i = 1
+	}
+	err = binary.Write(buf, binary.BigEndian, i)
+	return err
+}
+
 func decodeHeaders(r Reader) (h [][2]string, err error) {
 	var l uint16
 	err = binary.Read(r, binary.BigEndian, &l)
@@ -150,6 +159,15 @@ func decodeTime(r Reader) (_ time.Time, err error) {
 		return time.Time{}, err
 	}
 	return time.UnixMilli(i), nil
+}
+
+func decodeBool(r Reader) (_ bool, err error) {
+	var i uint
+	err = binary.Read(r, binary.BigEndian, &i)
+	if err != nil {
+		return false, err
+	}
+	return i > 0, nil
 }
 
 func (e *Entry) Size() int {
@@ -256,7 +274,8 @@ func (e *Metadata) Size() int {
 	var total = 16 + // 16 bytes for the ETag string header
 		24 + // 24 bytes for the Vary slice header
 		24 + // 24 bytes for the CacheControl slice header
-		24 // 24 bytes for the ttl time.Time
+		24 + // 24 bytes for the ttl time.Time
+		1 // 1 byte for NeedsRevalidation
 
 	total += len(e.ETag)
 
@@ -303,6 +322,14 @@ func (m *Metadata) MarshalTo(buf Writer) (err error) {
 	if err != nil {
 		return err
 	}
+	err = encodeBool(buf, m.NeedsRevalidation)
+	if err != nil {
+		return err
+	}
+	err = encodeStringSlice(buf, m.Linked)
+	if err != nil {
+		return err
+	}
 
 	return err
 }
@@ -337,6 +364,14 @@ func (m *Metadata) Unmarshal(r Reader) (err error) {
 		return err
 	}
 	m.Date, err = decodeTime(r)
+	if err != nil {
+		return err
+	}
+	m.NeedsRevalidation, err = decodeBool(r)
+	if err != nil {
+		return err
+	}
+	m.Linked, err = decodeStringSlice(r)
 	if err != nil {
 		return err
 	}

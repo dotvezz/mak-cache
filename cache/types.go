@@ -39,9 +39,11 @@ func (e *Entry) FromResponse(rec caddyhttp.ResponseRecorder) {
 
 // Metadata is metadata associated with a cache key
 type Metadata struct {
-	ETag         string
-	Vary         []string
-	CacheControl []string
-	Date         time.Time
-	Expires      time.Time
+	ETag              string
+	Vary              []string
+	CacheControl      []string
+	Date              time.Time
+	Expires           time.Time
+	NeedsRevalidation bool
+	Linked            []string
 }

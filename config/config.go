@@ -30,7 +30,7 @@ type ETagConfig struct {
 type CacheKeyConfig struct {
 	// Components specifies an ordered list of cache key components to include in the cache key.
 	// The default zero/empty value should be interpreted as the default cache key components:
-	// - method
+	// - host
 	// - path
 	// - query
 	Components []string `json:"components"`

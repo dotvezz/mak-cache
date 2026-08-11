@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-
+	"github.com/dotvezz/caddy-cache/requests"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/dotvezz/caddy-cache/cache"
@@ -61,19 +61,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return next.ServeHTTP(w, r)
 	}
 
-	// TODO: configurable caching rules for not-traditionally-cacheable methods
-	if r.Method != http.MethodHead && r.Method != http.MethodGet {
-		cacheStatus.FwdMethod = true
-		w.Header().Add("Cache-Status", cacheStatus.String())
-		return next.ServeHTTP(w, r)
-	}
-
 	headers.CanonicalizeRequest(r.Header)
 	cacheStatus.Key = cache.GenerateKey(r, h.Key, nil)
 
 	meta, found := h.getMetadata(r.Context(), cacheStatus.Key)
 
-	if !found {
+	if !requests.IsSafeMethod(r.Method) {
+		cacheStatus.FwdMethod = true
+		// Found metadata, but forwarded because of an unsafe method, so we need to invalidate
+		// RFC 9211 Section 4.4
+		return h.serveAndInvalidate(w, r, cacheStatus, next)
+	} else if !found {
+		// Miss
 		cacheStatus.FwdURIMiss = true
 		return h.forward(w, r, cacheStatus, requestTime, next)
 	}
@@ -104,6 +103,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			cacheStatus.FwdVaryMiss = true
 		}
 		return h.forward(w, r, cacheStatus, requestTime, next)
+	}
+
+	if entry.NeedsRevalidation {
+		return h.revalidate(w, r, entry, cacheStatus, requestTime, next)
 	}
 
 	if entry.Expires.Before(requestTime) {

@@ -137,7 +137,7 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 		cacheable = false
 	}
 
-	err = h.setMetadata(r.Context(), cacheStatus.Key, m)
+	entryMetadata := *m
 
 	if len(m.Vary) > 0 {
 		keyWithVary := cache.GenerateKey(r, h.Key, m.Vary)
@@ -145,11 +145,12 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 		e, err, _ = h.singleflight.Do(keyWithVary, func() (any, error) {
 			return h.fwdUpstream(oneShot, r, next)
 		})
-
+		m.Linked = append(m.Linked, keyWithVary)
 		entry = e.(*cache.Entry)
 	}
+	err = h.setMetadata(r.Context(), cacheStatus.Key, m)
 
-	entry.Metadata = *m
+	entry.Metadata = entryMetadata
 	if cacheable && err == nil {
 		if !h.ETag.Disable {
 			if etag := oneShot.Header().Get("ETag"); etag != "" {

@@ -69,7 +69,7 @@ func (h *Handler) updateMetadata(ctx context.Context, key string, meta *cache.Me
 func (h *Handler) getEntry(ctx context.Context, key string) (e *cache.Entry, found bool) {
 	e, err := h.entryStorage.Get(ctx, key)
 	found = err == nil
-	if err != nil {
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		h.Error("getEntry",
 			slog.String("key", key),
 			slog.String("error", err.Error()),
