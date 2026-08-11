@@ -27,7 +27,7 @@ type CacheStatus struct {
 }
 
 func (cs *CacheStatus) String() string {
-	parts := []string{"caddy-cache"}
+	parts := []string{"github.com/dotvezz/caddy-cache"}
 
 	if cs.Collapsed {
 		parts = append(parts, "collapsed")

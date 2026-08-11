@@ -99,7 +99,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		if len(meta.Vary) > 0 {
 			// Found metadata for the original request, but not an entry that matches the regenerated key with the Vary
 			// headers, therefore FwdVaryMiss
-			// Strictly speaking, this could be a miss due to cache eviction, but _most likely_ to be a Vary miss
 			cacheStatus.FwdVaryMiss = true
 		}
 		return h.forward(w, r, cacheStatus, requestTime, next)
