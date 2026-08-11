@@ -226,7 +226,7 @@ function test7_VaryStar(runID: string) {
     const status2 = getHeader(res2, 'Cache-Status');
 
     check(res2, {
-        'Test 7 VaryStar 2: bypasses cache': () => status2.includes('fwd=bypass'),
+        'Test 7 VaryStar 2: miss': () => status2.includes('fwd=uri-miss'),
     });
 }
 

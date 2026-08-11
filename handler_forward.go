@@ -96,20 +96,20 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 	r.Header.Del("If-Modified-Since")
 
 	// We're holding on to a clone of the request because we may need to reuse it, for example if the origin
-	// response has a Vary header.
+	// response has a Vary header and we need to regenerate a key.
 	// Because we're living in a Caddy handler, and upstream handlers may mutate the request, the original value of r
 	// is not safe for reuse.
 	rClone := r.Clone(r.Context())
 
-	oneShot := responses.NewOneShot(w)
 	var e any
 	var err error
+	oneShot := responses.NewOneShot(w)
+
 	e, err, cacheStatus.Collapsed = h.singleflight.Do(cacheStatus.Key, func() (any, error) {
 		return h.fwdUpstream(oneShot, r, next)
 	})
-
 	if err != nil {
-		oneShot.Header().Add("Cache-Status", cacheStatus.String())
+		w.Header().Set("Cache-Status", cacheStatus.String())
 		_ = oneShot.Fire()
 		if !errors.Is(err, errNotBuffered) {
 			return err
@@ -126,32 +126,18 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 
 	cacheable := true
 	vary := headers.Vary{}
-	vary.FromHeaders(oneShot.Header().Values("Vary"))
-
+	vary.FromHeaders(w.Header().Values("Vary"))
 	m.Vary = vary.ValsWithout(h.Headers.IgnoreVary)
 	if slices.Contains(m.Vary, "*") {
 		cacheable = false
 	}
 
-	if !h.handleOriginCacheControl(oneShot.Header(), m, entry.Status) {
+	if !h.handleOriginCacheControl(w.Header(), m, entry.Status) {
 		cacheable = false
 	}
 
-	entryMetadata := *m
-
-	if len(m.Vary) > 0 {
-		keyWithVary := cache.GenerateKey(r, h.Key, m.Vary)
-		oneShot.Reset()
-		e, err, _ = h.singleflight.Do(keyWithVary, func() (any, error) {
-			return h.fwdUpstream(oneShot, r, next)
-		})
-		m.Linked = append(m.Linked, keyWithVary)
-		entry = e.(*cache.Entry)
-	}
-	err = h.setMetadata(r.Context(), cacheStatus.Key, m)
-
-	entry.Metadata = entryMetadata
-	if cacheable && err == nil {
+	entry.Metadata = *m
+	if cacheable {
 		if !h.ETag.Disable {
 			if etag := oneShot.Header().Get("ETag"); etag != "" {
 				// Get the etag header from upstream
@@ -167,19 +153,22 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 		}
 
 		keyWithVary := cache.GenerateKey(rClone, h.Key, m.Vary)
+		m.Linked = append(m.Linked, keyWithVary)
 		err = h.setEntry(r.Context(), keyWithVary, entry)
+		err = h.setMetadata(r.Context(), cacheStatus.Key, m)
 		cacheStatus.Stored = err == nil
 	}
-
-	oneShot.Header().Set("Cache-Status", cacheStatus.String())
 
 	oneShot.WriteHeader(entry.Status)
 
 	_, err = oneShot.Write(entry.Body)
 	if err != nil {
+		w.Header().Set("Cache-Status", cacheStatus.String())
+		err = oneShot.Fire()
 		return err
 	}
 
+	w.Header().Set("Cache-Status", cacheStatus.String())
 	err = oneShot.Fire()
 	return err
 }
