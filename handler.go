@@ -70,7 +70,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		cacheStatus.FwdMethod = true
 		// Found metadata, but forwarded because of an unsafe method, so we need to invalidate
 		// RFC 9211 Section 4.4
-		return h.serveAndInvalidate(w, r, cacheStatus, next)
+		return h.handleAndInvalidate(w, r, cacheStatus, next)
 	} else if !found {
 		// Miss
 		cacheStatus.FwdURIMiss = true

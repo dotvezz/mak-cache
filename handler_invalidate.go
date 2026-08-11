@@ -9,7 +9,7 @@ import (
 	"github.com/dotvezz/caddy-cache/headers"
 )
 
-func (h *Handler) serveAndInvalidate(w http.ResponseWriter, r *http.Request, cacheStatus *headers.CacheStatus, next caddyhttp.Handler) error {
+func (h *Handler) handleAndInvalidate(w http.ResponseWriter, r *http.Request, cacheStatus *headers.CacheStatus, next caddyhttp.Handler) error {
 	w.Header().Add("Cache-Status", cacheStatus.String())
 
 	// Record the headers/status, but don't buffer the response.
