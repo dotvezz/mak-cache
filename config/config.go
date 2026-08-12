@@ -55,10 +55,16 @@ type CoalesceConfig struct {
 type StorageConfig struct {
 	// Otter sets a storage engine/provider to run in memory using Otter
 	Otter *OtterConfig `json:"otter,omitempty"`
+	// Valkey sets a storage engine/provider supporting Valkey and Redis (at least Redis Version 6)
+	Valkey *ValkeyConfig `json:"valkey,omitempty"`
 }
 
 type OtterConfig struct {
 	MemoryLimit uint64 `json:"memory_limit"`
+}
+
+type ValkeyConfig struct {
+	Address string
 }
 
 type TimingConfig struct {

@@ -13,6 +13,7 @@ import (
 	"github.com/dotvezz/caddy-cache/minitime"
 	"github.com/dotvezz/caddy-cache/storage"
 	"github.com/dotvezz/caddy-cache/storage/otter"
+	"github.com/dotvezz/caddy-cache/storage/valkey"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -55,6 +56,14 @@ func (h Handler) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
+func addStorage[T storage.Storable](p *storage.Provider[T], store storage.Provider[T]) {
+	if *p == nil {
+		*p = store
+	} else {
+		*p = storage.Wrap(*p, store)
+	}
+}
+
 func (h *Handler) Provision(context caddy.Context) (err error) {
 	if p, ok := storage.SharedStorageProviders[h.ConfigKey]; ok && p != nil {
 		// Try to see if there's a registered shared provider for the current config key. This would be if
@@ -62,16 +71,17 @@ func (h *Handler) Provision(context caddy.Context) (err error) {
 		h.entryStorage = p
 	} else {
 		for _, cfg := range h.Config.Storage {
+			var store storage.Provider[*cache.Entry]
 			switch {
 			case cfg.Otter != nil:
-				if h.entryStorage == nil {
-					h.entryStorage, err = otter.NewProvider[*cache.Entry](*cfg.Otter)
-				} else {
-					var store2 storage.Provider[*cache.Entry]
-					store2, err = otter.NewProvider[*cache.Entry](*cfg.Otter)
-					h.entryStorage = storage.Wrap(h.entryStorage, store2)
-				}
+				store, err = otter.NewProvider[*cache.Entry](*cfg.Otter)
+			case cfg.Valkey != nil:
+				store, err = valkey.NewProvider[cache.Entry, *cache.Entry](*cfg.Valkey)
 			}
+			if err != nil {
+				return err
+			}
+			addStorage(&h.entryStorage, store)
 		}
 
 		if _, ok = storage.SharedStorageProviders[h.ConfigKey]; ok {
@@ -85,16 +95,17 @@ func (h *Handler) Provision(context caddy.Context) (err error) {
 		h.metadataStorage = p
 	} else {
 		for _, cfg := range h.Config.MetadataStorage {
+			var store storage.Provider[*cache.Metadata]
 			switch {
 			case cfg.Otter != nil:
-				if h.metadataStorage == nil {
-					h.metadataStorage, err = otter.NewProvider[*cache.Metadata](*cfg.Otter)
-				} else {
-					var store2 storage.Provider[*cache.Metadata]
-					store2, err = otter.NewProvider[*cache.Metadata](*cfg.Otter)
-					h.metadataStorage = storage.Wrap(h.metadataStorage, store2)
-				}
+				store, err = otter.NewProvider[*cache.Metadata](*cfg.Otter)
+			case cfg.Valkey != nil:
+				store, err = valkey.NewProvider[cache.Metadata, *cache.Metadata](*cfg.Valkey)
 			}
+			if err != nil {
+				return err
+			}
+			addStorage(&h.metadataStorage, store)
 		}
 
 		if _, ok = storage.SharedMetadataProviders[h.ConfigKey]; ok {
@@ -428,7 +439,21 @@ func parseStorageConfig(h caddyfileHelper) (config.StorageConfig, error) {
 				}
 				s.Otter.MemoryLimit = uint64(val)
 			default:
-				return s, h.Errf("unknown in_memory storage configuration subkey %q", subKey)
+				return s, h.Errf("unknown in_memory/otter storage configuration subkey %q", subKey)
+			}
+		}
+	case "valkey", "redis":
+		s.Valkey = &config.ValkeyConfig{}
+		nesting := h.Nesting()
+		for h.NextBlock(nesting) {
+			subKey := h.Val()
+			switch subKey {
+			case "address":
+				if !h.Args(&s.Valkey.Address) {
+					return s, h.ArgErr()
+				}
+			default:
+				return s, h.Errf("unknown valkey/redis storage configuration subkey %q", subKey)
 			}
 		}
 	default:

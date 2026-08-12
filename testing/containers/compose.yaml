@@ -21,6 +21,18 @@ services:
       - 8086:8080
       - 2022:2020
 
+  caddy-e2e-valkey:
+    build:
+      context: ../../
+      dockerfile: testing/containers/caddy/Containerfile
+    depends_on:
+      - valkey
+    volumes:
+      - ./e2e-valkey/Caddyfile:/etc/caddy/Caddyfile
+    ports:
+      - 8087:8080
+      - 2023:2020
+
   mock-origin:
     build:
       context: ../../
@@ -68,3 +80,8 @@ services:
       - thread_pool_max=5000
       - -p
       - feature=-http2
+
+  valkey:
+    image: docker.io/valkey/valkey:9.1-alpine
+    ports:
+      - "6379:6379"
