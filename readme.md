@@ -8,27 +8,21 @@ caddyserver/cache-handler project.
 
 ## Features
 
-- RFC 9111 Compliance
-  - Estimated about 60% complete 
-- RFC 9211 Compliance
-  - Estimated about 95% complete
+- Compliant with RFC 9110, 9111, and 9211
 - Flexible cache storage options
   - In-memory, with configurable size limits
-  - Redis
+  - Redis >= V6
+  - Valkey
 - Cache Stampede protection features
   - Request Coalescing/Collapsing to mitigate stampedes forwarded to origin
   - Optional TTL Splay/Jitter to mitigate stampedes to the proxy
-- ETag Headers and Conditional Requests
+- Support for ETag Revalidation with `If-None-Match` Conditional requests
 - Tiered/Layered cache storage
 
 ### Roadmap
 
-- Finish implementation of RFC 9111 
-- Finish/polish implementation of RFC 9211
-- Implement Negative Caching to protect origins from cache-poisoning-induced thundering herds
-- Implement Support for GraphQL
 - Implement metrics
-- Implement Invalidation and Surrogate Keys
+- Implement support for Surrogate Keys
 
 ## Contributing
 

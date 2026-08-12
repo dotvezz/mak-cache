@@ -11,6 +11,7 @@ import (
 )
 
 func (h *Handler) getMetadata(ctx context.Context, key string) (m *cache.Metadata, found bool) {
+	key = "m" + key
 	var err error
 	if h.metadataStorage == nil {
 		// Allow for entry storage to act as metadata storage, if no dedicated metadata storage is configured
@@ -38,6 +39,7 @@ func (h *Handler) setMetadata(ctx context.Context, key string, meta *cache.Metad
 	if meta == nil {
 		return fmt.Errorf("metadata is nil")
 	}
+	key = "m" + key
 
 	// Allow for entry storage to act as metadata storage, if no dedicated metadata storage is configured
 	if h.metadataStorage == nil {
@@ -54,6 +56,7 @@ func (h *Handler) updateMetadata(ctx context.Context, key string, meta *cache.Me
 	if meta == nil {
 		return fmt.Errorf("metadata is nil")
 	}
+	key = "m" + key
 
 	// Allow for entry storage to act as metadata storage, if no dedicated metadata storage is configured
 	if h.metadataStorage == nil {
@@ -67,6 +70,7 @@ func (h *Handler) updateMetadata(ctx context.Context, key string, meta *cache.Me
 }
 
 func (h *Handler) getEntry(ctx context.Context, key string) (e *cache.Entry, found bool) {
+	key = "e" + key
 	e, err := h.entryStorage.Get(ctx, key)
 	found = err == nil
 	if err != nil && !errors.Is(err, storage.ErrNotFound) {
@@ -80,9 +84,11 @@ func (h *Handler) getEntry(ctx context.Context, key string) (e *cache.Entry, fou
 }
 
 func (h *Handler) setEntry(ctx context.Context, key string, entry *cache.Entry) error {
+	key = "e" + key
 	return h.entryStorage.Set(ctx, key, entry)
 }
 
 func (h *Handler) updateEntry(ctx context.Context, key string, entry *cache.Entry) error {
+	key = "e" + key
 	return h.entryStorage.Update(ctx, key, entry)
 }

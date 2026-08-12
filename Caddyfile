@@ -8,12 +8,19 @@
 			ttl_splay 10s
 		}
 
-		metadata_storage in-memory {
-			memory_limit 268435456 # 256mb
-		}
-		storage in-memory {
-			memory_limit 268435456 # 256mb
-		}
+        metadata_storage valkey {
+            address localhost:6379
+        }
+        storage valkey {
+            address localhost:6379
+        }
+
+#		metadata_storage in-memory {
+#			memory_limit 268435456 # 256mb
+#		}
+#		storage in-memory {
+#			memory_limit 268435456 # 256mb
+#		}
 	}
 }
 

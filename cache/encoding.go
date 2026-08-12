@@ -162,7 +162,7 @@ func decodeTime(r Reader) (_ time.Time, err error) {
 }
 
 func decodeBool(r Reader) (_ bool, err error) {
-	var i uint
+	var i uint8
 	err = binary.Read(r, binary.BigEndian, &i)
 	if err != nil {
 		return false, err

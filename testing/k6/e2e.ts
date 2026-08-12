@@ -10,39 +10,45 @@ export const options: Options = {
     },
 };
 
-const PORT = __ENV.PORT || '8086';
-const BASE_URL = `http://localhost:${PORT}`;
+const TARGETS = __ENV.PORT
+    ? [{ name: `caddy (port ${__ENV.PORT})`, url: `http://localhost:${__ENV.PORT}` }]
+    : [
+        { name: 'caddy-e2e', url: 'http://localhost:8086' },
+        { name: 'caddy-e2e-valkey', url: 'http://localhost:8087' },
+      ];
 
 export default function () {
-    const runID = Date.now().toString();
-    console.log(`Running E2E tests against ${BASE_URL} (runID: ${runID})`);
+    for (const target of TARGETS) {
+        const runID = Date.now().toString();
+        console.log(`Running E2E tests against ${target.name} at ${target.url} (runID: ${runID})`);
 
-    test1_BasicMissAndHit(runID);
-    test2_TTLExpiration(runID);
-    test3_NoStore(runID);
-    test4_Private(runID);
-    test5_MaxAgeOverride(runID);
-    test6_VaryAcceptEncoding(runID);
-    test7_VaryStar(runID);
-    test8_ETagConditional(runID);
-    test9_NonCacheableMethods(runID);
-    test10_RequestCoalescing(runID);
-    test11_StaleWhileRevalidate(runID);
-    test12_SMaxAgeOverride(runID);
-    test13_NoCacheResponse(runID);
-    test14_NoCacheRequest(runID);
-    test15_NoStoreRequest(runID);
-    test16_ExpiresPastAndFuture(runID);
-    test17_MaxAgeOverridesExpires(runID);
-    test18_MustRevalidate(runID);
-    test19_WeakETag(runID);
-    test20_UnsafeMethodInvalidation(runID);
-    test21_UncacheableStatusCode500(runID);
-    test22_CacheableStatusCode404(runID);
-    test23_AgeHeader(runID);
-    test24_HeadMethod(runID);
-    test25_MaxAgeZeroRequest(runID);
-    test26_PublicDirective(runID);
+        test1_BasicMissAndHit(target.url, runID);
+        test2_TTLExpiration(target.url, runID);
+        test3_NoStore(target.url, runID);
+        test4_Private(target.url, runID);
+        test5_MaxAgeOverride(target.url, runID);
+        test6_VaryAcceptEncoding(target.url, runID);
+        test7_VaryStar(target.url, runID);
+        test8_ETagConditional(target.url, runID);
+        test9_NonCacheableMethods(target.url, runID);
+        test10_RequestCoalescing(target.url, runID);
+        test11_StaleWhileRevalidate(target.url, runID);
+        test12_SMaxAgeOverride(target.url, runID);
+        test13_NoCacheResponse(target.url, runID);
+        test14_NoCacheRequest(target.url, runID);
+        test15_NoStoreRequest(target.url, runID);
+        test16_ExpiresPastAndFuture(target.url, runID);
+        test17_MaxAgeOverridesExpires(target.url, runID);
+        test18_MustRevalidate(target.url, runID);
+        test19_WeakETag(target.url, runID);
+        test20_UnsafeMethodInvalidation(target.url, runID);
+        test21_UncacheableStatusCode500(target.url, runID);
+        test22_CacheableStatusCode404(target.url, runID);
+        test23_AgeHeader(target.url, runID);
+        test24_HeadMethod(target.url, runID);
+        test25_MaxAgeZeroRequest(target.url, runID);
+        test26_PublicDirective(target.url, runID);
+    }
 }
 
 function getHeader(res: any, name: string): string {
@@ -53,8 +59,8 @@ function getHeader(res: any, name: string): string {
 }
 
 // 1. Basic Cache Miss -> Hit
-function test1_BasicMissAndHit(runID: string) {
-    const url = `${BASE_URL}/cacheable?t1=${runID}`;
+function test1_BasicMissAndHit(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cacheable?t1=${runID}`;
     
     // First request - Miss
     const res1 = http.get(url);
@@ -80,8 +86,8 @@ function test1_BasicMissAndHit(runID: string) {
 }
 
 // 2. TTL Expiration
-function test2_TTLExpiration(runID: string) {
-    const url = `${BASE_URL}/cacheable?t2=${runID}`;
+function test2_TTLExpiration(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cacheable?t2=${runID}`;
     const res1 = http.get(url);
     const reqID1 = getHeader(res1, 'X-Origin-Request-Id');
 
@@ -101,8 +107,8 @@ function test2_TTLExpiration(runID: string) {
 }
 
 // 3. Cache-Control: no-store
-function test3_NoStore(runID: string) {
-    const url = `${BASE_URL}/cache-control/no-store?t3=${runID}`;
+function test3_NoStore(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/no-store?t3=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
 
@@ -122,8 +128,8 @@ function test3_NoStore(runID: string) {
 }
 
 // 4. Cache-Control: private
-function test4_Private(runID: string) {
-    const url = `${BASE_URL}/cache-control/private?t4=${runID}`;
+function test4_Private(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/private?t4=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
 
@@ -143,8 +149,8 @@ function test4_Private(runID: string) {
 }
 
 // 5. Cache-Control: max-age Override
-function test5_MaxAgeOverride(runID: string) {
-    const url = `${BASE_URL}/cache-control/max-age/2?t5=${runID}`;
+function test5_MaxAgeOverride(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/max-age/2?t5=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
 
@@ -173,8 +179,8 @@ function test5_MaxAgeOverride(runID: string) {
 }
 
 // 6. Vary: Accept-Encoding
-function test6_VaryAcceptEncoding(runID: string) {
-    const url = `${BASE_URL}/vary/accept-encoding?t6=${runID}`;
+function test6_VaryAcceptEncoding(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/vary/accept-encoding?t6=${runID}`;
     const headersGzip = { 'Accept-Encoding': 'gzip' };
     const headersBr = { 'Accept-Encoding': 'br' };
 
@@ -212,8 +218,8 @@ function test6_VaryAcceptEncoding(runID: string) {
 }
 
 // 7. Vary: *
-function test7_VaryStar(runID: string) {
-    const url = `${BASE_URL}/vary/star?t7=${runID}`;
+function test7_VaryStar(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/vary/star?t7=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
 
@@ -231,8 +237,8 @@ function test7_VaryStar(runID: string) {
 }
 
 // 8. ETag / Conditional Requests
-function test8_ETagConditional(runID: string) {
-    const url = `${BASE_URL}/etag?t8=${runID}`;
+function test8_ETagConditional(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/etag?t8=${runID}`;
     const res1 = http.get(url);
     const etag = getHeader(res1, 'ETag');
 
@@ -261,8 +267,8 @@ function test8_ETagConditional(runID: string) {
 }
 
 // 9. Non-Cacheable HTTP Methods
-function test9_NonCacheableMethods(runID: string) {
-    const url = `${BASE_URL}/cacheable?t9=${runID}`;
+function test9_NonCacheableMethods(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cacheable?t9=${runID}`;
     const resPOST = http.post(url, {});
     const statusPOST = getHeader(resPOST, 'Cache-Status');
 
@@ -290,8 +296,8 @@ function test9_NonCacheableMethods(runID: string) {
 }
 
 // 10. Request Coalescing
-function test10_RequestCoalescing(runID: string) {
-    const url = `${BASE_URL}/slow/500?t10=${runID}`;
+function test10_RequestCoalescing(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/slow/500?t10=${runID}`;
     const requests = Array(10).fill({
         method: 'GET',
         url: url,
@@ -325,8 +331,8 @@ function test10_RequestCoalescing(runID: string) {
 }
 
 // 11. Stale-While-Revalidate
-function test11_StaleWhileRevalidate(runID: string) {
-    const url = `${BASE_URL}/cache-control/swr/10?t11=${runID}`;
+function test11_StaleWhileRevalidate(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/swr/10?t11=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
 
@@ -357,8 +363,8 @@ function test11_StaleWhileRevalidate(runID: string) {
 }
 
 // 12. Cache-Control: s-maxage (Shared Cache Max-Age) - RFC 9111 Section 5.2.2.10
-function test12_SMaxAgeOverride(runID: string) {
-    const url = `${BASE_URL}/cache-control/s-maxage?t12=${runID}`;
+function test12_SMaxAgeOverride(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/s-maxage?t12=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
 
@@ -386,8 +392,8 @@ function test12_SMaxAgeOverride(runID: string) {
 }
 
 // 13. Cache-Control: no-cache Response Directive - RFC 9111 Section 5.2.2.4
-function test13_NoCacheResponse(runID: string) {
-    const url = `${BASE_URL}/cache-control/no-cache?t13=${runID}`;
+function test13_NoCacheResponse(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/no-cache?t13=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
 
@@ -407,8 +413,8 @@ function test13_NoCacheResponse(runID: string) {
 }
 
 // 14. Cache-Control: no-cache Request Directive - RFC 9111 Section 5.2.1.4
-function test14_NoCacheRequest(runID: string) {
-    const url = `${BASE_URL}/cacheable?t14=${runID}`;
+function test14_NoCacheRequest(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cacheable?t14=${runID}`;
     
     // Store in cache
     const res1 = http.get(url);
@@ -431,8 +437,8 @@ function test14_NoCacheRequest(runID: string) {
 }
 
 // 15. Cache-Control: no-store Request Directive - RFC 9111 Section 5.2.1.5
-function test15_NoStoreRequest(runID: string) {
-    const url = `${BASE_URL}/cacheable?t15=${runID}`;
+function test15_NoStoreRequest(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cacheable?t15=${runID}`;
 
     // Request with no-store in request header
     const res1 = http.get(url, { headers: { 'Cache-Control': 'no-store' } });
@@ -452,9 +458,9 @@ function test15_NoStoreRequest(runID: string) {
 }
 
 // 16. Expires Header (Past vs Future) - RFC 9111 Section 5.3
-function test16_ExpiresPastAndFuture(runID: string) {
+function test16_ExpiresPastAndFuture(baseUrl: string, runID: string) {
     // Expires in the past -> must not be served as fresh
-    const urlPast = `${BASE_URL}/expires/past?t16a=${runID}`;
+    const urlPast = `${baseUrl}/expires/past?t16a=${runID}`;
     const resPast1 = http.get(urlPast);
     const resPast2 = http.get(urlPast);
     const statusPast2 = getHeader(resPast2, 'Cache-Status');
@@ -464,7 +470,7 @@ function test16_ExpiresPastAndFuture(runID: string) {
     });
 
     // Expires in the future -> served as fresh hit
-    const urlFuture = `${BASE_URL}/expires/future?t16b=${runID}`;
+    const urlFuture = `${baseUrl}/expires/future?t16b=${runID}`;
     const resFut1 = http.get(urlFuture);
     const resFut2 = http.get(urlFuture);
     const statusFut2 = getHeader(resFut2, 'Cache-Status');
@@ -475,8 +481,8 @@ function test16_ExpiresPastAndFuture(runID: string) {
 }
 
 // 17. max-age Precedence over Expires - RFC 9111 Section 5.3
-function test17_MaxAgeOverridesExpires(runID: string) {
-    const url = `${BASE_URL}/expires/max-age-override?t17=${runID}`;
+function test17_MaxAgeOverridesExpires(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/expires/max-age-override?t17=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
 
@@ -502,8 +508,8 @@ function test17_MaxAgeOverridesExpires(runID: string) {
 }
 
 // 18. Cache-Control: must-revalidate Directive - RFC 9111 Section 5.2.2.1
-function test18_MustRevalidate(runID: string) {
-    const url = `${BASE_URL}/cache-control/must-revalidate?t18=${runID}`;
+function test18_MustRevalidate(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/must-revalidate?t18=${runID}`;
     const res1 = http.get(url);
     check(res1, {
         'Test 18 must-revalidate: stored on miss': () => getHeader(res1, 'Cache-Status').includes('stored'),
@@ -527,8 +533,8 @@ function test18_MustRevalidate(runID: string) {
 }
 
 // 19. Weak ETag Conditional Requests - RFC 9111 Section 2.3
-function test19_WeakETag(runID: string) {
-    const url = `${BASE_URL}/etag/weak?t19=${runID}`;
+function test19_WeakETag(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/etag/weak?t19=${runID}`;
     const res1 = http.get(url);
     const etag = getHeader(res1, 'ETag');
 
@@ -548,8 +554,8 @@ function test19_WeakETag(runID: string) {
 }
 
 // 20. Cache Invalidation on Unsafe Methods - RFC 9111 Section 4.4
-function test20_UnsafeMethodInvalidation(runID: string) {
-    const url = `${BASE_URL}/cacheable?t20=${runID}`;
+function test20_UnsafeMethodInvalidation(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cacheable?t20=${runID}`;
     
     // Step 1: Prime cache
     const res1 = http.get(url);
@@ -576,8 +582,8 @@ function test20_UnsafeMethodInvalidation(runID: string) {
 }
 
 // 21. Uncacheable Status Code 500 - RFC 9111 Section 4.2.2
-function test21_UncacheableStatusCode500(runID: string) {
-    const url = `${BASE_URL}/status/500?t21=${runID}`;
+function test21_UncacheableStatusCode500(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/status/500?t21=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
 
@@ -596,8 +602,8 @@ function test21_UncacheableStatusCode500(runID: string) {
 }
 
 // 22. Cacheable Status Code 404 - RFC 9111 Section 4.2.2
-function test22_CacheableStatusCode404(runID: string) {
-    const url = `${BASE_URL}/status/404?t22=${runID}`;
+function test22_CacheableStatusCode404(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/status/404?t22=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
 
@@ -616,8 +622,8 @@ function test22_CacheableStatusCode404(runID: string) {
 }
 
 // 23. Age Header Presence on Hits - RFC 9111 Section 5.1
-function test23_AgeHeader(runID: string) {
-    const url = `${BASE_URL}/cacheable?t23=${runID}`;
+function test23_AgeHeader(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cacheable?t23=${runID}`;
     
     // First request - Miss
     const res1 = http.get(url);
@@ -636,8 +642,8 @@ function test23_AgeHeader(runID: string) {
 }
 
 // 24. HEAD Method Caching - RFC 9111 Section 4
-function test24_HeadMethod(runID: string) {
-    const url = `${BASE_URL}/cacheable?t24=${runID}`;
+function test24_HeadMethod(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cacheable?t24=${runID}`;
     
     // Prime cache with GET
     const res1 = http.get(url);
@@ -654,8 +660,8 @@ function test24_HeadMethod(runID: string) {
 }
 
 // 25. Cache-Control: max-age=0 Request Directive - RFC 9111 Section 5.2.1.2
-function test25_MaxAgeZeroRequest(runID: string) {
-    const url = `${BASE_URL}/cacheable?t25=${runID}`;
+function test25_MaxAgeZeroRequest(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cacheable?t25=${runID}`;
     
     // Prime cache
     const res1 = http.get(url);
@@ -670,8 +676,8 @@ function test25_MaxAgeZeroRequest(runID: string) {
 }
 
 // 26. Cache-Control: public Directive - RFC 9111 Section 5.2.2.9
-function test26_PublicDirective(runID: string) {
-    const url = `${BASE_URL}/cache-control/public?t26=${runID}`;
+function test26_PublicDirective(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/public?t26=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
 
