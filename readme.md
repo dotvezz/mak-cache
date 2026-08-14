@@ -8,7 +8,7 @@ caddyserver/cache-handler project.
 
 ## Features
 
-- Compliant with RFC 9110, 9111, and 9211
+- Compliant with RFC 5861, 9110, 9111, and 9211
 - Flexible cache storage options
   - In-memory, with configurable size limits
   - Redis >= V6

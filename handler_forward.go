@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"slices"
 	"time"
@@ -51,30 +52,39 @@ func (h *Handler) backgroundRefresh(req *http.Request, entry *cache.Entry, cache
 	}()
 }
 
-func (h *Handler) handleOriginCacheControl(hdr http.Header, m *cache.Metadata, status int) (cacheable bool) {
-	if cc := hdr.Values("Cache-Control"); len(cc) > 0 {
-		if h.Config.Headers.IgnoreOriginCacheControl {
+func (h *Handler) processResponseHeaders(reqH, respH http.Header, m *cache.Metadata, status int) (cacheable bool) {
+	// Handle the Cache-Control header, set metadata and cacheability
+	var respCC headers.CacheControl
+	if cc := respH.Values("Cache-Control"); len(cc) > 0 {
+		if h.Config.Headers.OverrideOriginCacheControl {
 			return true
 		}
 
-		cacheControl := headers.CacheControl{}
+		respCC = headers.CacheControl{}
 		// Only load the most-recent (last in the slice) Cache-Control header
-		err := cacheControl.FromString(cc[len(cc)-1])
+		err := respCC.FromString(cc[len(cc)-1])
 		if err == nil {
 			// Only load Cache-Control into the metadata if we were able to successfully parse it
-			m.CacheControl = cacheControl.Directives()
+			m.CacheControl = respCC.Directives()
 		}
 
-		if cacheControl.SMaxAge != nil {
-			m.Expires = h.now().Add(*cacheControl.SMaxAge)
-		} else if cacheControl.MaxAge != nil {
-			m.Expires = h.now().Add(*cacheControl.MaxAge)
+		if respCC.SMaxAge != nil {
+			m.Expires = h.now().Add(*respCC.SMaxAge)
+		} else if respCC.MaxAge != nil {
+			m.Expires = h.now().Add(*respCC.MaxAge)
 		}
 
-		return cacheControl.Cacheable(true)
+		return respCC.Cacheable(true)
 	}
 
-	if exps := hdr.Get("Expires"); exps != "" {
+	// Only allow caching authorized requests if explicitly allowed in response Cache-Control
+	// RFC 9211 Sec 3.5
+	if reqH.Get("Authorization") != "" && !respCC.MustRevalidate && !respCC.Public && respCC.SMaxAge == nil {
+		return false
+	}
+
+	// Handle Expires header, set metadata, and set not cacheable if invalid
+	if exps := respH.Get("Expires"); exps != "" {
 		expires := headers.Expires{}
 		err := expires.FromString(exps)
 		if err == nil {
@@ -84,9 +94,31 @@ func (h *Handler) handleOriginCacheControl(hdr http.Header, m *cache.Metadata, s
 		}
 	}
 
+	// Not cacheable if Vary contains "*"
+	vary := headers.Vary{}
+	vary.FromHeaders(respH.Values("Vary"))
+	m.Vary = vary.ValsWithout(h.Headers.IgnoreVary)
+	if slices.Contains(m.Vary, "*") {
+		return false
+	}
+
 	// From RFC 9110 15.1
 	heuristicallyCacheable := []int{200, 203, 204, 206, 300, 301, 308, 404, 405, 410, 414, 501}
 	return slices.Contains(heuristicallyCacheable, status)
+}
+
+func (h *Handler) setEtag(resp http.ResponseWriter, entry *cache.Entry) {
+	if etag := resp.Header().Get("ETag"); etag != "" {
+		// Get the etag header from upstream
+		entry.ETag = etag
+	} else {
+		if etagHeader := entry.GetHeader("ETag"); len(etagHeader) > 0 {
+			entry.ETag = etagHeader[0]
+		} else {
+			entry.ETag = cache.GenerateEtag(entry, h.ETag)
+		}
+		resp.Header().Set("ETag", entry.ETag)
+	}
 }
 
 func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) error {
@@ -108,6 +140,9 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 	e, err, cacheStatus.Collapsed = h.singleflight.Do(cacheStatus.Key, func() (any, error) {
 		return h.fwdUpstream(oneShot, r, next)
 	})
+
+	cacheStatus.FwdStatus = oneShot.Status()
+
 	if err != nil {
 		oneShot.Header().Set("Cache-Status", cacheStatus.String())
 		_ = oneShot.Fire()
@@ -124,51 +159,34 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 		Expires: requestTime.Add(time.Duration(h.Timing.TTL)),
 	}
 
-	cacheable := true
-	vary := headers.Vary{}
-	vary.FromHeaders(oneShot.Header().Values("Vary"))
-	m.Vary = vary.ValsWithout(h.Headers.IgnoreVary)
-	if slices.Contains(m.Vary, "*") {
-		cacheable = false
-	}
-
-	if !h.handleOriginCacheControl(oneShot.Header(), m, entry.Status) {
-		cacheable = false
-	}
+	cacheable := h.processResponseHeaders(rClone.Header, oneShot.Header(), m, entry.Status)
 
 	entry.Metadata = *m
 	if cacheable {
 		if !h.ETag.Disable {
-			if etag := oneShot.Header().Get("ETag"); etag != "" {
-				// Get the etag header from upstream
-				entry.ETag = etag
-			} else {
-				if etagHeader := entry.GetHeader("ETag"); len(etagHeader) > 0 {
-					entry.ETag = etagHeader[0]
-				} else {
-					entry.ETag = cache.GenerateEtag(entry, h.ETag)
-				}
-				oneShot.Header().Set("ETag", entry.ETag)
-			}
+			h.setEtag(oneShot, entry)
 		}
 
 		keyWithVary := cache.GenerateKey(rClone, h.Key, m.Vary)
 		m.Linked = append(m.Linked, keyWithVary)
 		err = h.setEntry(r.Context(), keyWithVary, entry)
-		err = h.setMetadata(r.Context(), cacheStatus.Key, m)
 		cacheStatus.Stored = err == nil
 	}
+
+	// Set metadata regardless of entry storeability/cacheability
+	err = h.setMetadata(r.Context(), cacheStatus.Key, m)
 
 	oneShot.WriteHeader(entry.Status)
 
 	_, err = oneShot.Write(entry.Body)
+	w.Header().Set("Cache-Status", cacheStatus.String())
 	if err != nil {
-		w.Header().Set("Cache-Status", cacheStatus.String())
-		err = oneShot.Fire()
-		return err
+		h.Error("forward",
+			slog.String("description", "error writing response body"),
+			slog.String("err", err.Error()),
+		)
 	}
 
-	w.Header().Set("Cache-Status", cacheStatus.String())
 	err = oneShot.Fire()
 	return err
 }

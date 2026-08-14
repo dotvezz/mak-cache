@@ -9,11 +9,14 @@ import (
 
 type CacheControl struct {
 	MaxAge               *time.Duration
+	MinFresh             *time.Duration
+	MaxStale             *time.Duration
 	SMaxAge              *time.Duration
 	StaleWhileRevalidate *time.Duration
 	MustRevalidate       bool
 	ProxyRevalidate      bool
 	Private              bool
+	Public               bool
 	NoStore              bool
 	NoCache              bool
 }
@@ -31,6 +34,14 @@ func (cc *CacheControl) FromString(v string) error {
 	return cc.FromDirectives(ds)
 }
 
+func secsToDuration(s string) (time.Duration, error) {
+	i, err := strconv.Atoi(s)
+	if err != nil {
+		return 0, err
+	}
+	return time.Duration(i) * time.Second, nil
+}
+
 // FromDirectives expects a set of directive strings
 func (cc *CacheControl) FromDirectives(ds []string) (err error) {
 	for _, d := range ds {
@@ -40,16 +51,34 @@ func (cc *CacheControl) FromDirectives(ds []string) (err error) {
 			if !ok {
 				return fmt.Errorf("invalid max-age: %s", d)
 			}
-			dur, err := time.ParseDuration(v + "s")
+			dur, err := secsToDuration(v)
 			cc.MaxAge = &dur
 			if err != nil {
 				return fmt.Errorf("invalid max-age: %s, %v", d, err)
+			}
+		case "min-fresh":
+			if !ok {
+				return fmt.Errorf("invalid max-age: %s", d)
+			}
+			dur, err := secsToDuration(v)
+			cc.MinFresh = &dur
+			if err != nil {
+				return fmt.Errorf("invalid min-fresh: %s, %v", d, err)
+			}
+		case "max-stale":
+			if !ok {
+				return fmt.Errorf("invalid max-age: %s", d)
+			}
+			dur, err := secsToDuration(v)
+			cc.MaxStale = &dur
+			if err != nil {
+				return fmt.Errorf("invalid max-stale: %s, %v", d, err)
 			}
 		case "s-maxage":
 			if !ok {
 				return fmt.Errorf("invalid s-maxage: %s", d)
 			}
-			dur, err := time.ParseDuration(v + "s")
+			dur, err := secsToDuration(v)
 			cc.SMaxAge = &dur
 			if err != nil {
 				return fmt.Errorf("invalid s-maxage: %s, %v", d, err)
@@ -58,7 +87,7 @@ func (cc *CacheControl) FromDirectives(ds []string) (err error) {
 			if !ok {
 				return fmt.Errorf("invalid stale-while-revalidate: %s", d)
 			}
-			dur, err := time.ParseDuration(v + "s")
+			dur, err := secsToDuration(v)
 			cc.StaleWhileRevalidate = &dur
 			if err != nil {
 				return fmt.Errorf("invalid stale-while-revalidate: %s, %v", d, err)
@@ -74,7 +103,7 @@ func (cc *CacheControl) FromDirectives(ds []string) (err error) {
 		case "private":
 			cc.Private = true
 		case "public":
-			cc.Private = false
+			cc.Public = true
 		}
 	}
 	return nil
@@ -91,12 +120,23 @@ func (cc *CacheControl) Directives() (ds []string) {
 
 	if cc.Private {
 		ds = append(ds, "private")
-	} else {
+	}
+
+	// private overrides public
+	if cc.Public && !cc.Private {
 		ds = append(ds, "public")
 	}
 
 	if cc.MaxAge != nil {
 		ds = append(ds, "max-age="+strconv.Itoa(int(cc.MaxAge.Seconds())))
+	}
+
+	if cc.MaxStale != nil {
+		ds = append(ds, "max-stale="+strconv.Itoa(int(cc.MaxStale.Seconds())))
+	}
+
+	if cc.MinFresh != nil {
+		ds = append(ds, "min-fresh="+strconv.Itoa(int(cc.MinFresh.Seconds())))
 	}
 
 	if cc.SMaxAge != nil {
