@@ -7,10 +7,10 @@
         }
 
         metadata_storage otter {
-            memory_limit 16777216 # 16MB
+            memory_limit 16MB
         }
         storage otter {
-            memory_limit 805306368  # 768MB
+            memory_limit 768MB
         }
     }
 }

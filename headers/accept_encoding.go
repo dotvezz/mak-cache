@@ -9,7 +9,6 @@ type AcceptEncoding struct {
 	Sorted
 }
 
-// TODO: Make configurable?
 var acceptEncodingRank = []string{
 	"dcz",
 	"zstd",

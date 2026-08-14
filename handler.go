@@ -172,7 +172,7 @@ func (h *Handler) entryHeaders(w http.ResponseWriter, cacheStatus *headers.Cache
 	if h.Timing.TTLSplay > 0 {
 		cacheStatus.TTL = e.Expires.Sub(h.now()) + time.Duration(rand.IntN(int(h.Timing.TTLSplay)))
 	}
-	
+
 	hs.Add("Cache-Status", cacheStatus.String())
 
 	expires := headers.Expires(requestTime.Add(cacheStatus.TTL))
