@@ -14,6 +14,7 @@ import (
 	"github.com/dotvezz/caddy-cache/storage"
 	"github.com/dotvezz/caddy-cache/storage/otter"
 	"github.com/dotvezz/caddy-cache/storage/valkey"
+	"github.com/dustin/go-humanize"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -433,7 +434,12 @@ func parseStorageConfig(h caddyfileHelper) (config.StorageConfig, error) {
 				if !h.Args(&valStr) {
 					return s, h.ArgErr()
 				}
-				val, err := strconv.Atoi(valStr) // TODO: Parse size strings and big uint64 numbers
+				val, err := strconv.Atoi(valStr)
+				if err != nil {
+					var val2 uint64
+					val2, err = humanize.ParseBytes(valStr)
+					val = int(val2)
+				}
 				if err != nil {
 					return s, h.Errf("invalid memory_limit value %q: %v", valStr, err)
 				}
