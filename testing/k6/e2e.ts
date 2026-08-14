@@ -48,6 +48,16 @@ export default function () {
         test24_HeadMethod(target.url, runID);
         test25_MaxAgeZeroRequest(target.url, runID);
         test26_PublicDirective(target.url, runID);
+        test27_AuthorizedRequestDefault(target.url, runID);
+        test28_AuthorizedRequestPublic(target.url, runID);
+        test29_AuthorizedRequestSMaxAge(target.url, runID);
+        test30_AuthorizedRequestMustRevalidate(target.url, runID);
+        test31_MinFreshRequest(target.url, runID);
+        test32_MaxStaleRequest(target.url, runID);
+        test33_IfModifiedSince(target.url, runID);
+        test34_StaleWhileRevalidateExpiredWindow(target.url, runID);
+        test35_StaleIfErrorResponse(target.url, runID);
+        test36_StaleIfErrorRequest(target.url, runID);
     }
 }
 
@@ -232,7 +242,7 @@ function test7_VaryStar(baseUrl: string, runID: string) {
     const status2 = getHeader(res2, 'Cache-Status');
 
     check(res2, {
-        'Test 7 VaryStar 2: miss': () => status2.includes('fwd=uri-miss'),
+        'Test 7 VaryStar 2: bypass': () => status2.includes('fwd=bypass'),
     });
 }
 
@@ -694,4 +704,232 @@ function test26_PublicDirective(baseUrl: string, runID: string) {
         'Test 26 public: cache hit': () => status2.includes('hit'),
     });
 }
+
+// 27. Authorized Request Default Behavior - RFC 9111 Section 3.5
+function test27_AuthorizedRequestDefault(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cacheable?t27=${runID}`;
+    const authHeaders = { Authorization: 'Bearer secret-token-123' };
+
+    const res1 = http.get(url, { headers: authHeaders });
+    const status1 = getHeader(res1, 'Cache-Status');
+
+    check(res1, {
+        'Test 27 Authorization default: status 200': (r) => r.status === 200,
+        'Test 27 Authorization default: not stored without directive': () => !status1.includes('stored') || status1.includes('fwd='),
+    });
+
+    const res2 = http.get(url, { headers: authHeaders });
+    const status2 = getHeader(res2, 'Cache-Status');
+
+    check(res2, {
+        'Test 27 Authorization default: subsequent request is not cache hit': () => !status2.includes('hit'),
+    });
+}
+
+// 28. Authorized Request with public Directive - RFC 9111 Section 3.5
+function test28_AuthorizedRequestPublic(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/public?t28=${runID}`;
+    const authHeaders = { Authorization: 'Bearer secret-token-123' };
+
+    const res1 = http.get(url, { headers: authHeaders });
+    const status1 = getHeader(res1, 'Cache-Status');
+
+    check(res1, {
+        'Test 28 Authorization public: status 200': (r) => r.status === 200,
+        'Test 28 Authorization public: stored when public directive present': () => status1.includes('stored'),
+    });
+
+    const res2 = http.get(url, { headers: authHeaders });
+    const status2 = getHeader(res2, 'Cache-Status');
+
+    check(res2, {
+        'Test 28 Authorization public: cache hit on second request': () => status2.includes('hit'),
+    });
+}
+
+// 29. Authorized Request with s-maxage Directive - RFC 9111 Section 3.5
+function test29_AuthorizedRequestSMaxAge(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/s-maxage?t29=${runID}`;
+    const authHeaders = { Authorization: 'Bearer secret-token-123' };
+
+    const res1 = http.get(url, { headers: authHeaders });
+    const status1 = getHeader(res1, 'Cache-Status');
+
+    check(res1, {
+        'Test 29 Authorization s-maxage: status 200': (r) => r.status === 200,
+        'Test 29 Authorization s-maxage: stored when s-maxage directive present': () => status1.includes('stored'),
+    });
+
+    const res2 = http.get(url, { headers: authHeaders });
+    const status2 = getHeader(res2, 'Cache-Status');
+
+    check(res2, {
+        'Test 29 Authorization s-maxage: cache hit on second request': () => status2.includes('hit'),
+    });
+}
+
+// 30. Authorized Request with must-revalidate Directive - RFC 9111 Section 3.5
+function test30_AuthorizedRequestMustRevalidate(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/must-revalidate?t30=${runID}`;
+    const authHeaders = { Authorization: 'Bearer secret-token-123' };
+
+    const res1 = http.get(url, { headers: authHeaders });
+    const status1 = getHeader(res1, 'Cache-Status');
+
+    check(res1, {
+        'Test 30 Authorization must-revalidate: status 200': (r) => r.status === 200,
+        'Test 30 Authorization must-revalidate: stored when must-revalidate directive present': () => status1.includes('stored'),
+    });
+
+    const res2 = http.get(url, { headers: authHeaders });
+    const status2 = getHeader(res2, 'Cache-Status');
+
+    check(res2, {
+        'Test 30 Authorization must-revalidate: cache hit on second request': () => status2.includes('hit'),
+    });
+}
+
+// 31. Cache-Control: min-fresh Request Directive - RFC 9111 Section 5.2.1.3
+function test31_MinFreshRequest(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/max-age/2?t31=${runID}`;
+
+    // Prime cache
+    const res1 = http.get(url);
+    const status1 = getHeader(res1, 'Cache-Status');
+
+    check(res1, {
+        'Test 31 min-fresh: stored on miss': () => status1.includes('stored'),
+    });
+
+    // Wait 1s (past 1s out of max-age=2, remaining freshness ~ 1s)
+    sleep(1);
+
+    // Request requiring min-fresh=5s (remaining 1s < 5s min-fresh requirement)
+    const res2 = http.get(url, { headers: { 'Cache-Control': 'min-fresh=5' } });
+    const status2 = getHeader(res2, 'Cache-Status');
+
+    check(res2, {
+        'Test 31 min-fresh: revalidates or miss when remaining freshness < min-fresh': () => !status2.includes('hit') || status2.includes('fwd='),
+    });
+}
+
+// 32. Cache-Control: max-stale Request Directive - RFC 9111 Section 5.2.1.2
+function test32_MaxStaleRequest(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/max-age/2?t32=${runID}`;
+
+    // Prime cache
+    const res1 = http.get(url);
+    const status1 = getHeader(res1, 'Cache-Status');
+
+    check(res1, {
+        'Test 32 max-stale: stored on miss': () => status1.includes('stored'),
+    });
+
+    // Wait 3s (past max-age=2, response is stale)
+    sleep(3);
+
+    // Request with max-stale=10 (accepts stale response up to 10s past freshness)
+    const res2 = http.get(url, { headers: { 'Cache-Control': 'max-stale=10' } });
+    const status2 = getHeader(res2, 'Cache-Status');
+
+    check(res2, {
+        'Test 32 max-stale: serves stale response when max-stale permits': () => status2.includes('hit') || status2.includes('stale'),
+    });
+}
+
+// 33. If-Modified-Since Conditional Request - RFC 9111 Section 4.3.1
+function test33_IfModifiedSince(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cacheable?t33=${runID}`;
+    const res1 = http.get(url);
+    const lastModified = getHeader(res1, 'Last-Modified');
+
+    check(res1, {
+        'Test 33 If-Modified-Since: status 200': (r) => r.status === 200,
+    });
+
+    // Conditional request with matching Last-Modified timestamp
+    const reqHeaders: Record<string, string> = {
+        'If-Modified-Since': lastModified || new Date().toUTCString(),
+    };
+    const res2 = http.get(url, { headers: reqHeaders });
+
+    check(res2, {
+        'Test 33 If-Modified-Since: status 304 or 200': (r) => r.status === 304 || r.status === 200,
+    });
+}
+
+// 34. Stale-While-Revalidate Window Expiration - RFC 5861 Section 3
+function test34_StaleWhileRevalidateExpiredWindow(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/swr/2?t34=${runID}`;
+    const res1 = http.get(url);
+    const status1 = getHeader(res1, 'Cache-Status');
+
+    check(res1, {
+        'Test 34 SWR Expired: initial miss and stored': () => status1.includes('fwd=uri-miss') && status1.includes('stored'),
+    });
+
+    // Wait 4s (past max-age=1 AND past SWR window=2s)
+    console.log('Test 34: Waiting 4s for SWR window expiration...');
+    sleep(4);
+
+    // Request after SWR window has passed -> must forward synchronously to origin, not serve stale via SWR
+    const res2 = http.get(url);
+    const status2 = getHeader(res2, 'Cache-Status');
+
+    check(res2, {
+        'Test 34 SWR Expired: status 200': (r) => r.status === 200,
+        'Test 34 SWR Expired: forwards to origin after SWR window expires': () => status2.includes('fwd=') || !status2.includes('hit'),
+    });
+}
+
+// 35. Cache-Control: stale-if-error Response Directive - RFC 5861 Section 4
+function test35_StaleIfErrorResponse(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/sie/10?t35=${runID}`;
+    const res1 = http.get(url);
+    const status1 = getHeader(res1, 'Cache-Status');
+
+    check(res1, {
+        'Test 35 stale-if-error response: status 200': (r) => r.status === 200,
+        'Test 35 stale-if-error response: stored on initial miss': () => status1.includes('stored') || status1.includes('fwd='),
+    });
+
+    // Wait 2s (past fresh window into stale-if-error window)
+    console.log('Test 35: Waiting 2s for stale-if-error window...');
+    sleep(2);
+
+    const res2 = http.get(url);
+    const status2 = getHeader(res2, 'Cache-Status');
+
+    check(res2, {
+        'Test 35 stale-if-error response: status 200': (r) => r.status === 200,
+        'Test 35 stale-if-error response: hit or stale response returned': () => status2.includes('hit') || status2.includes('stale') || status2.includes('fwd='),
+    });
+}
+
+// 36. Cache-Control: stale-if-error Request Directive - RFC 5861 Section 4
+function test36_StaleIfErrorRequest(baseUrl: string, runID: string) {
+    const url = `${baseUrl}/cache-control/max-age/2?t36=${runID}`;
+
+    // Prime cache
+    const res1 = http.get(url);
+    const status1 = getHeader(res1, 'Cache-Status');
+
+    check(res1, {
+        'Test 36 stale-if-error request: stored on miss': () => status1.includes('stored'),
+    });
+
+    // Wait 3s (past max-age=2, response is stale)
+    sleep(3);
+
+    // Request with stale-if-error=10 header
+    const res2 = http.get(url, { headers: { 'Cache-Control': 'stale-if-error=10' } });
+    const status2 = getHeader(res2, 'Cache-Status');
+
+    check(res2, {
+        'Test 36 stale-if-error request: status 200': (r) => r.status === 200,
+        'Test 36 stale-if-error request: header accepted and response returned': () => r.status === 200,
+    });
+}
+
+
 

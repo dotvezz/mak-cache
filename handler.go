@@ -34,6 +34,42 @@ type Handler struct {
 	now func() time.Time
 }
 
+func requestRequiresRevalidation(reqCC headers.CacheControl, entry *cache.Entry, requestTime time.Time) bool {
+	ttl := entry.Expires.Sub(requestTime)
+	if reqCC.MinFresh != nil && *reqCC.MinFresh > ttl {
+		return true
+	}
+
+	if reqCC.MaxStale != nil && -ttl > *reqCC.MaxStale {
+		return true
+	}
+
+	age := requestTime.Sub(entry.Date)
+	if reqCC.MaxAge != nil && age > *reqCC.MaxAge {
+		return true
+	}
+
+	return false
+}
+
+func isStale(entry *cache.Entry, requestTime time.Time) bool {
+	if entry.Expires.Before(requestTime) {
+		return true
+	}
+
+	return false
+}
+
+func (h *Handler) canBackgroundRefresh(respCC headers.CacheControl, entry *cache.Entry, requestTime time.Time) bool {
+	maxStale := time.Duration(h.Timing.MaxStale)
+
+	if respCC.StaleWhileRevalidate != nil && !h.Headers.OverrideOriginCacheControl {
+		maxStale = *respCC.StaleWhileRevalidate
+	}
+
+	return !h.Refresh.Disable && entry.Expires.Add(maxStale).After(requestTime)
+}
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) (err error) {
 	cacheStatus := new(headers.CacheStatus)
 	requestTime := h.now()
@@ -69,7 +105,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	if !requests.IsSafeMethod(r.Method) {
 		cacheStatus.FwdMethod = true
 		// Found metadata, but forwarded because of an unsafe method, so we need to invalidate
-		// RFC 9211 Section 4.4
+		// RFC 9211 Sec 4.4
 		return h.handleAndInvalidate(w, r, cacheStatus, next)
 	} else if !found {
 		// Miss
@@ -104,26 +140,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 		return h.forward(w, r, cacheStatus, requestTime, next)
 	}
 
+	if requestRequiresRevalidation(reqCC, entry, requestTime) {
+		cacheStatus.FwdRequest = true
+		return h.revalidate(w, r, entry, cacheStatus, requestTime, next)
+	}
+
 	if entry.NeedsRevalidation {
 		return h.revalidate(w, r, entry, cacheStatus, requestTime, next)
 	}
 
-	if entry.Expires.Before(requestTime) {
-		maxStale := time.Duration(h.Timing.MaxStale)
-		if respCC.StaleWhileRevalidate != nil {
-			maxStale = *respCC.StaleWhileRevalidate
-		}
-		if !h.Refresh.Disable && entry.Expires.Add(maxStale).After(requestTime) {
+	if isStale(entry, requestTime) {
+		if h.canBackgroundRefresh(respCC, entry, requestTime) {
 			h.backgroundRefresh(r, entry, cacheStatus, requestTime, next)
 		} else {
 			cacheStatus.FwdStale = true
 			return h.forward(w, r, cacheStatus, requestTime, next)
 		}
-	}
-
-	if reqCC.MaxAge != nil && entry.Date.Add(*reqCC.MaxAge).Before(requestTime) {
-		cacheStatus.FwdStale = true
-		return h.forward(w, r, cacheStatus, requestTime, next)
 	}
 
 	{
@@ -146,9 +178,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	return h.replyWithEntry(w, cacheStatus, requestTime, entry)
 }
 
-// TODO: Handle Authorization Header for RFC 9111
 func (h *Handler) shouldBuffer(status int, headers http.Header) bool {
-	cacheable := h.handleOriginCacheControl(headers, &cache.Metadata{}, status)
+	cacheable := h.processResponseHeaders(make(http.Header), headers, &cache.Metadata{}, status)
 	if cacheable {
 		return true
 	}

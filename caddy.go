@@ -198,13 +198,13 @@ func parseFromCustomHelper(h caddyfileHelper, c *config.Config) (err error) {
 				switch subKey {
 				case "ignore_vary":
 					c.Headers.IgnoreVary = h.RemainingArgs()
-				case "ignore_origin_cache_control":
-					c.Headers.IgnoreOriginCacheControl, err = parseBoolArg(h)
+				case "override_origin_cache_control":
+					c.Headers.OverrideOriginCacheControl, err = parseBoolArg(h)
 					if err != nil {
 						return err
 					}
-				case "ignore_client_cache_control":
-					c.Headers.IgnoreClientCacheControl, err = parseBoolArg(h)
+				case "override_client_cache_control":
+					c.Headers.OverrideClientCacheControl, err = parseBoolArg(h)
 					if err != nil {
 						return err
 					}

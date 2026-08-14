@@ -3,7 +3,6 @@
     cache {
         timing {
             ttl 5s
-            ttl_splay 1s
         }
 
         metadata_storage otter {

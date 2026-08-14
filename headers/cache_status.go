@@ -1,6 +1,7 @@
 package headers
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -56,7 +57,7 @@ func (cs *CacheStatus) String() string {
 		parts = append(parts, "fwd="+reason)
 
 		if cs.FwdStatus != 0 {
-			parts = append(parts, "fwd-status="+reason)
+			parts = append(parts, fmt.Sprintf("fwd-status=%d", cs.FwdStatus))
 		}
 	}
 	if cs.Stored {

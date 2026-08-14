@@ -81,11 +81,12 @@ type TimingConfig struct {
 }
 
 type RefreshConfig struct {
-	// Disable disables refresh-while-stale features and forces requests to proxy to origin on stale instead.
+	// Disable disables stale-while-revalidate or similar features and forces requests to proxy to origin on stale,
+	// regardless of origin Cache-Control header directives.
 	Disable bool `json:"disable"`
 
 	// Timeout specifies the maximum duration to wait for an async background refresh. Zero will default to
-	// defaultRefreshTimeout
+	// defaultRefreshTimeout.
 	Timeout minitime.Duration `json:"timeout"`
 }
 
@@ -100,17 +101,25 @@ type HeadersConfig struct {
 	// By default, no Vary headers are ignored.
 	IgnoreVary []string `json:"ignore_vary"`
 
-	// IgnoreOriginCacheControl sets handler to ignore origin cache control headers entirely, applying the configured
-	// cache and timing settings even if the origin requests otherwise.
+	// OverrideOriginCacheControl sets the handler to override origin Cache-Control header directives with configured
+	// values if there are any conflicts, applying configured cache and timing settings even if the origin requests
+	// otherwise.
+	//
 	// While this is useful, it may be undesirable in some cases where the origin cache control headers are important.
 	// If the origin service is a third-party vendor, enforcing cache control headers may be against your license
 	// terms, for example.
-	IgnoreOriginCacheControl bool `json:"ignore_origin_cache_control"`
+	//
+	// Enabling this breaks compliance with RFC 5861 and RFC 9111
+	OverrideOriginCacheControl bool `json:"override_origin_cache_control"`
 
-	// IgnoreClientCacheControl sets the handler to ignore request cache control headers entirely, applying the
-	// configured cache and timing settings even if the client requests otherwise.
-	// Compared to IgnoreOriginCacheControl, this is rarely problematic but still not considered a "sane default."
-	IgnoreClientCacheControl bool `json:"ignore_client_cache_control"`
+	// OverrideClientCacheControl sets the handler to override request Cache-Control header directives with configured
+	// values if there are any conflicts, applying configured cache and timing settings even if the client requests
+	// otherwise.
+	//
+	// Compared to OverrideOriginCacheControl, this is rarely problematic but still not considered a "sane default."
+	//
+	// Enabling this breaks compliance with RFC 5861 and RFC 9111
+	OverrideClientCacheControl bool `json:"override_client_cache_control"`
 }
 
 type Config struct {

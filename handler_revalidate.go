@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -32,6 +31,8 @@ func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, entry *cach
 		if err != nil {
 			return false, err
 		}
+
+		cacheStatus.FwdStatus = rec.Status()
 
 		if !rec.Buffered() {
 			if rec.Status() == http.StatusNotModified {
@@ -63,40 +64,21 @@ func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, entry *cach
 			Expires: requestTime.Add(time.Duration(h.Timing.TTL)),
 		}
 
-		cacheable := true
-		vary := headers.Vary{}
-		vary.FromHeaders(rec.Header().Values("Vary"))
-
-		m.Vary = vary.ValsWithout(h.Headers.IgnoreVary)
-		if slices.Contains(m.Vary, "*") {
-			cacheable = false
-		}
-
-		if !h.handleOriginCacheControl(rClone.Header, m, rec.Status()) {
-			cacheable = false
-		}
-
-		err = h.setMetadata(r.Context(), cacheStatus.Key, m)
+		cacheable := h.processResponseHeaders(r.Header, rClone.Header, m, rec.Status())
 
 		entry.Metadata = *m
 		if cacheable && err == nil {
 			if !h.ETag.Disable {
-				if etag := rec.Header().Get("ETag"); etag != "" {
-					entry.ETag = etag
-				} else {
-					if etagHeader := entry.GetHeader("ETag"); len(etagHeader) > 0 {
-						entry.ETag = etagHeader[0]
-					} else {
-						entry.ETag = cache.GenerateEtag(entry, h.ETag)
-					}
-					rec.Header().Set("ETag", entry.ETag)
-				}
+				h.setEtag(w, entry)
 			}
 
 			keyWithVary := cache.GenerateKey(rClone, h.Key, m.Vary)
 			err = h.updateEntry(r.Context(), keyWithVary, entry)
 			cacheStatus.Stored = err == nil
 		}
+
+		err = h.setMetadata(r.Context(), cacheStatus.Key, m)
+
 		return false, nil
 	})
 
