@@ -26,5 +26,8 @@ loadtest:
 	go tool k6 run ./testing/k6/stress.ts
 
 e2e:
-	go tool k6 run ./testing/k6/e2e.ts
+	go tool k6 run --log-format raw ./testing/k6/e2e.ts
+
+e2e-all:
+	go tool k6 run --log-format raw -e ALL=true ./testing/k6/e2e.ts
 

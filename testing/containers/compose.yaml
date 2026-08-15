@@ -1,17 +1,8 @@
 name: caddy-cache testing stack
 
 services:
-  caddy:
-    build:
-      context: ../../
-      dockerfile: testing/containers/caddy/Containerfile
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
-    ports:
-      - 8081:8080
-      - 2021:2020
-
-  caddy-e2e:
+  # The test container for caddy-cache with otter
+  caddy-otter:
     build:
       context: ../../
       dockerfile: testing/containers/caddy/Containerfile
@@ -21,7 +12,8 @@ services:
       - 8086:8080
       - 2022:2020
 
-  caddy-e2e-valkey:
+  # The test container for caddy-cache with valkey
+  caddy-valkey:
     build:
       context: ../../
       dockerfile: testing/containers/caddy/Containerfile
@@ -33,15 +25,13 @@ services:
       - 8087:8080
       - 2023:2020
 
-  mock-origin:
-    build:
-      context: ../../
-      dockerfile: testing/containers/mock-origin/Containerfile
-    volumes:
-      - ../mock-responses:/srv:ro
+  # the valkey container, as a dep for caddy-valkey
+  valkey:
+    image: docker.io/valkey/valkey:9.1-alpine
     ports:
-      - 8085:8080
+      - "6379:6379"
 
+  # The test container for souin with otter (the only souin source, we're not testing with any other storages)
   caddy-souin:
     build:
       context: ../../
@@ -52,14 +42,7 @@ services:
       - 8082:8082
       - 2020:2019
 
-  fileserver:
-    image: docker.io/caddy:2.11.4-alpine
-    volumes:
-      - ./fileserver/Caddyfile:/etc/caddy/Caddyfile
-      - ../files:/srv:ro
-    ports:
-      - 8084:80
-
+  # the test container for varnish's default configuration.
   varnish:
     image: docker.io/varnish:fresh
     environment:
@@ -73,15 +56,29 @@ services:
       - "8083:8083"
     command:
       - -p
-      - thread_pools=8
+      - thread_pools=2
       - -p
-      - thread_pool_min=500
+      - thread_pool_min=25
       - -p
-      - thread_pool_max=5000
+      - thread_pool_max=500
       - -p
       - feature=-http2
 
-  valkey:
-    image: docker.io/valkey/valkey:9.1-alpine
+  # The origin container for e2e tests, providing a variety of mock responses
+  mock-origin:
+    build:
+      context: ../../
+      dockerfile: testing/containers/mock-origin/Containerfile
+    volumes:
+      - ../mock-responses:/srv:ro
     ports:
-      - "6379:6379"
+      - 8085:8080
+
+  # the origin container for benchmarking caches, a simple fileserver with files of varying sizes and types
+  fileserver:
+    image: docker.io/caddy:2.11.4-alpine
+    volumes:
+      - ./fileserver/Caddyfile:/etc/caddy/Caddyfile
+      - ../files:/srv:ro
+    ports:
+      - 8084:80

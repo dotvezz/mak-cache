@@ -2,13 +2,13 @@
     order cache before reverse_proxy
     cache {
         otter
-        ttl 5m
+        ttl 5s
     }
 }
 
 :8082 {
     route * {
         cache
-        reverse_proxy fileserver
+        reverse_proxy mock-origin:8080
     }
 }
