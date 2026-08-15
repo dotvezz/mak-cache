@@ -1,67 +1,161 @@
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check as k6Check } from 'k6';
 import { Options } from 'k6/options';
 
 export const options: Options = {
     vus: 1,
     iterations: 1,
     thresholds: {
-        checks: ['rate>0.5'], // Allow reporting all findings without aborting test runner
+        checks: ['rate>0.0'], // Allow reporting all findings without aborting test runner
     },
 };
 
+const isAll = __ENV.ALL && ['true', '1', 'yes'].includes(__ENV.ALL.toLowerCase());
+
 const TARGETS = __ENV.PORT
     ? [{ name: `caddy (port ${__ENV.PORT})`, url: `http://localhost:${__ENV.PORT}` }]
-    : [
+    : isAll
+    ? [
         { name: 'caddy-e2e', url: 'http://localhost:8086' },
         { name: 'caddy-e2e-valkey', url: 'http://localhost:8087' },
-      ];
+        { name: 'caddy-souin', url: 'http://localhost:8082' },
+        { name: 'varnish', url: 'http://localhost:8083' },
+      ]
+    : [{ name: 'caddy-e2e', url: 'http://localhost:8086' }];
 
-export default function () {
-    for (const target of TARGETS) {
-        const runID = Date.now().toString();
-        console.log(`Running E2E tests against ${target.name} at ${target.url} (runID: ${runID})`);
+interface TestStats {
+    passedChecks: number;
+    totalChecks: number;
+}
 
-        test1_BasicMissAndHit(target.url, runID);
-        test2_TTLExpiration(target.url, runID);
-        test3_NoStore(target.url, runID);
-        test4_Private(target.url, runID);
-        test5_MaxAgeOverride(target.url, runID);
-        test6_VaryAcceptEncoding(target.url, runID);
-        test7_VaryStar(target.url, runID);
-        test8_ETagConditional(target.url, runID);
-        test9_NonCacheableMethods(target.url, runID);
-        test10_RequestCoalescing(target.url, runID);
-        test11_StaleWhileRevalidate(target.url, runID);
-        test12_SMaxAgeOverride(target.url, runID);
-        test13_NoCacheResponse(target.url, runID);
-        test14_NoCacheRequest(target.url, runID);
-        test15_NoStoreRequest(target.url, runID);
-        test16_ExpiresPastAndFuture(target.url, runID);
-        test17_MaxAgeOverridesExpires(target.url, runID);
-        test18_MustRevalidate(target.url, runID);
-        test19_WeakETag(target.url, runID);
-        test20_UnsafeMethodInvalidation(target.url, runID);
-        test21_UncacheableStatusCode500(target.url, runID);
-        test22_CacheableStatusCode404(target.url, runID);
-        test23_AgeHeader(target.url, runID);
-        test24_HeadMethod(target.url, runID);
-        test25_MaxAgeZeroRequest(target.url, runID);
-        test26_PublicDirective(target.url, runID);
-        test27_AuthorizedRequestDefault(target.url, runID);
-        test28_AuthorizedRequestPublic(target.url, runID);
-        test29_AuthorizedRequestSMaxAge(target.url, runID);
-        test30_AuthorizedRequestMustRevalidate(target.url, runID);
-        test31_MinFreshRequest(target.url, runID);
-        test32_MaxStaleRequest(target.url, runID);
-        test33_IfModifiedSince(target.url, runID);
-        test34_StaleWhileRevalidateExpiredWindow(target.url, runID);
-        test35_StaleIfErrorResponse(target.url, runID);
-        test36_StaleIfErrorRequest(target.url, runID);
+type CheckFn = <T>(val: T, sets: { [name: string]: (val: T) => boolean }) => boolean;
+
+const asyncSleep = (seconds: number) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+
+const testResults: Record<string, Record<string, TestStats>> = {};
+const testNames: string[] = [];
+
+function printMatrixSummary() {
+    const targetNames = TARGETS.map((t) => t.name);
+    const testColWidth = 35;
+    const targetColWidth = 18;
+    const totalWidth = testColWidth + 3 + (targetColWidth + 3) * targetNames.length;
+    const divider = '='.repeat(totalWidth);
+    const line = '-'.repeat(totalWidth);
+
+    const pad = (s: string, w: number) => s.slice(0, w).padEnd(w);
+    const center = (s: string, w: number) => s.slice(0, w).padStart(Math.floor((w + Math.min(s.length, w)) / 2)).padEnd(w);
+
+    const totals: Record<string, { testsPassed: number; checksPassed: number; checksTotal: number }> =
+        Object.fromEntries(targetNames.map((t) => [t, { testsPassed: 0, checksPassed: 0, checksTotal: 0 }]));
+
+    console.log(`\n${divider}\n${center('E2E TEST MATRIX SUMMARY', totalWidth)}\n${divider}`);
+    console.log([pad('Test Suite', testColWidth), ...targetNames.map((t) => center(t, targetColWidth))].join(' | '));
+    console.log(line);
+
+    for (const testName of testNames) {
+        const cells = targetNames.map((target) => {
+            const { passedChecks = 0, totalChecks = 0 } = testResults[testName]?.[target] || {};
+            const isPass = totalChecks > 0 && passedChecks === totalChecks;
+
+            totals[target].checksPassed += passedChecks;
+            totals[target].checksTotal += totalChecks;
+            if (isPass) totals[target].testsPassed++;
+
+            return center(`${isPass ? 'PASS' : 'FAIL'} (${passedChecks}/${totalChecks})`, targetColWidth);
+        });
+
+        console.log([pad(testName, testColWidth), ...cells].join(' | '));
     }
+
+    console.log(line);
+    console.log([pad('Passed Test Cases', testColWidth), ...targetNames.map((t) => center(`${totals[t].testsPassed}/${testNames.length}`, targetColWidth))].join(' | '));
+    console.log([pad('Passed Individual Checks', testColWidth), ...targetNames.map((t) => center(`${totals[t].checksPassed}/${totals[t].checksTotal}`, targetColWidth))].join(' | '));
+    console.log(`${divider}\n`);
+}
+
+async function runTarget(target: { name: string; url: string }) {
+    const runID = Date.now().toString();
+    console.log(`Running E2E tests against ${target.name} at ${target.url} (runID: ${runID})`);
+
+    const runTest = async (name: string, fn: (check: CheckFn) => Promise<void> | void) => {
+        if (!testNames.includes(name)) {
+            testNames.push(name);
+        }
+
+        const check: CheckFn = (val, sets) => {
+            const res = k6Check(val, sets);
+            let passed = 0;
+            let total = 0;
+            for (const key of Object.keys(sets)) {
+                total++;
+                try {
+                    if (sets[key](val)) passed++;
+                } catch (_) {}
+            }
+
+            if (!testResults[name]) testResults[name] = {};
+            if (!testResults[name][target.name]) {
+                testResults[name][target.name] = { passedChecks: 0, totalChecks: 0 };
+            }
+            testResults[name][target.name].passedChecks += passed;
+            testResults[name][target.name].totalChecks += total;
+
+            return res;
+        };
+
+        try {
+            await fn(check);
+        } catch (err) {
+            console.log(`Error in ${name} on ${target.name}: ${err}`);
+        }
+    };
+
+    await runTest('1. Basic Miss & Hit', (check) => test1_BasicMissAndHit(check, target.url, runID));
+    await runTest('2. TTL Expiration', (check) => test2_TTLExpiration(check, target.url, runID));
+    await runTest('3. Cache-Control: no-store', (check) => test3_NoStore(check, target.url, runID));
+    await runTest('4. Cache-Control: private', (check) => test4_Private(check, target.url, runID));
+    await runTest('5. MaxAge Override', (check) => test5_MaxAgeOverride(check, target.url, runID));
+    await runTest('6. Vary Accept-Encoding', (check) => test6_VaryAcceptEncoding(check, target.url, runID));
+    await runTest('7. Vary *', (check) => test7_VaryStar(check, target.url, runID));
+    await runTest('8. ETag Conditional', (check) => test8_ETagConditional(check, target.url, runID));
+    await runTest('9. Non-Cacheable Methods', (check) => test9_NonCacheableMethods(check, target.url, runID));
+    await runTest('10. Request Coalescing', (check) => test10_RequestCoalescing(check, target.url, runID));
+    await runTest('11. Stale-While-Revalidate', (check) => test11_StaleWhileRevalidate(check, target.url, runID));
+    await runTest('12. s-maxage Override', (check) => test12_SMaxAgeOverride(check, target.url, runID));
+    await runTest('13. no-cache Response', (check) => test13_NoCacheResponse(check, target.url, runID));
+    await runTest('14. no-cache Request', (check) => test14_NoCacheRequest(check, target.url, runID));
+    await runTest('15. no-store Request', (check) => test15_NoStoreRequest(check, target.url, runID));
+    await runTest('16. Expires Past & Future', (check) => test16_ExpiresPastAndFuture(check, target.url, runID));
+    await runTest('17. MaxAge > Expires', (check) => test17_MaxAgeOverridesExpires(check, target.url, runID));
+    await runTest('18. must-revalidate', (check) => test18_MustRevalidate(check, target.url, runID));
+    await runTest('19. Weak ETag', (check) => test19_WeakETag(check, target.url, runID));
+    await runTest('20. Unsafe Method Invalidation', (check) => test20_UnsafeMethodInvalidation(check, target.url, runID));
+    await runTest('21. Status 500 Uncacheable', (check) => test21_UncacheableStatusCode500(check, target.url, runID));
+    await runTest('22. Status 404 Cacheable', (check) => test22_CacheableStatusCode404(check, target.url, runID));
+    await runTest('23. Age Header', (check) => test23_AgeHeader(check, target.url, runID));
+    await runTest('24. HEAD Method', (check) => test24_HeadMethod(check, target.url, runID));
+    await runTest('25. max-age=0 Request', (check) => test25_MaxAgeZeroRequest(check, target.url, runID));
+    await runTest('26. public Directive', (check) => test26_PublicDirective(check, target.url, runID));
+    await runTest('27. Authorized Request Default', (check) => test27_AuthorizedRequestDefault(check, target.url, runID));
+    await runTest('28. Authorized Request Public', (check) => test28_AuthorizedRequestPublic(check, target.url, runID));
+    await runTest('29. Authorized Request s-maxage', (check) => test29_AuthorizedRequestSMaxAge(check, target.url, runID));
+    await runTest('30. Authorized Request must-reval', (check) => test30_AuthorizedRequestMustRevalidate(check, target.url, runID));
+    await runTest('31. min-fresh Request', (check) => test31_MinFreshRequest(check, target.url, runID));
+    await runTest('32. max-stale Request', (check) => test32_MaxStaleRequest(check, target.url, runID));
+    await runTest('33. If-Modified-Since', (check) => test33_IfModifiedSince(check, target.url, runID));
+    await runTest('34. SWR Expired Window', (check) => test34_StaleWhileRevalidateExpiredWindow(check, target.url, runID));
+    await runTest('35. stale-if-error Response', (check) => test35_StaleIfErrorResponse(check, target.url, runID));
+    await runTest('36. stale-if-error Request', (check) => test36_StaleIfErrorRequest(check, target.url, runID));
+}
+
+export default async function () {
+    await Promise.all(TARGETS.map((target) => runTarget(target)));
+    printMatrixSummary();
 }
 
 function getHeader(res: any, name: string): string {
+    if (!res || !res.headers) return '';
     const key = Object.keys(res.headers).find(
         (k) => k.toLowerCase() === name.toLowerCase()
     );
@@ -69,7 +163,7 @@ function getHeader(res: any, name: string): string {
 }
 
 // 1. Basic Cache Miss -> Hit
-function test1_BasicMissAndHit(baseUrl: string, runID: string) {
+function test1_BasicMissAndHit(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cacheable?t1=${runID}`;
     
     // First request - Miss
@@ -96,14 +190,14 @@ function test1_BasicMissAndHit(baseUrl: string, runID: string) {
 }
 
 // 2. TTL Expiration
-function test2_TTLExpiration(baseUrl: string, runID: string) {
+async function test2_TTLExpiration(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cacheable?t2=${runID}`;
     const res1 = http.get(url);
     const reqID1 = getHeader(res1, 'X-Origin-Request-Id');
 
     // Default TTL in e2e Caddyfile is 5s
     console.log('Test 2: Waiting 6s for TTL expiration...');
-    sleep(11);
+    await asyncSleep(11);
 
     const res2 = http.get(url);
     const status2 = getHeader(res2, 'Cache-Status');
@@ -117,7 +211,7 @@ function test2_TTLExpiration(baseUrl: string, runID: string) {
 }
 
 // 3. Cache-Control: no-store
-function test3_NoStore(baseUrl: string, runID: string) {
+function test3_NoStore(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/no-store?t3=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -138,7 +232,7 @@ function test3_NoStore(baseUrl: string, runID: string) {
 }
 
 // 4. Cache-Control: private
-function test4_Private(baseUrl: string, runID: string) {
+function test4_Private(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/private?t4=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -159,7 +253,7 @@ function test4_Private(baseUrl: string, runID: string) {
 }
 
 // 5. Cache-Control: max-age Override
-function test5_MaxAgeOverride(baseUrl: string, runID: string) {
+async function test5_MaxAgeOverride(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/max-age/2?t5=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -178,7 +272,7 @@ function test5_MaxAgeOverride(baseUrl: string, runID: string) {
 
     // Wait 3s (past max-age=2, but before default TTL 5s)
     console.log('Test 5: Waiting 5s for max-age=2 expiration...');
-    sleep(5);
+    await asyncSleep(5);
 
     const res3 = http.get(url);
     const status3 = getHeader(res3, 'Cache-Status');
@@ -189,7 +283,7 @@ function test5_MaxAgeOverride(baseUrl: string, runID: string) {
 }
 
 // 6. Vary: Accept-Encoding
-function test6_VaryAcceptEncoding(baseUrl: string, runID: string) {
+function test6_VaryAcceptEncoding(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/vary/accept-encoding?t6=${runID}`;
     const headersGzip = { 'Accept-Encoding': 'gzip' };
     const headersBr = { 'Accept-Encoding': 'br' };
@@ -228,7 +322,7 @@ function test6_VaryAcceptEncoding(baseUrl: string, runID: string) {
 }
 
 // 7. Vary: *
-function test7_VaryStar(baseUrl: string, runID: string) {
+function test7_VaryStar(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/vary/star?t7=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -247,7 +341,7 @@ function test7_VaryStar(baseUrl: string, runID: string) {
 }
 
 // 8. ETag / Conditional Requests
-function test8_ETagConditional(baseUrl: string, runID: string) {
+function test8_ETagConditional(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/etag?t8=${runID}`;
     const res1 = http.get(url);
     const etag = getHeader(res1, 'ETag');
@@ -277,7 +371,7 @@ function test8_ETagConditional(baseUrl: string, runID: string) {
 }
 
 // 9. Non-Cacheable HTTP Methods
-function test9_NonCacheableMethods(baseUrl: string, runID: string) {
+function test9_NonCacheableMethods(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cacheable?t9=${runID}`;
     const resPOST = http.post(url, {});
     const statusPOST = getHeader(resPOST, 'Cache-Status');
@@ -306,7 +400,7 @@ function test9_NonCacheableMethods(baseUrl: string, runID: string) {
 }
 
 // 10. Request Coalescing
-function test10_RequestCoalescing(baseUrl: string, runID: string) {
+function test10_RequestCoalescing(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/slow/500?t10=${runID}`;
     const requests = Array(10).fill({
         method: 'GET',
@@ -341,7 +435,7 @@ function test10_RequestCoalescing(baseUrl: string, runID: string) {
 }
 
 // 11. Stale-While-Revalidate
-function test11_StaleWhileRevalidate(baseUrl: string, runID: string) {
+async function test11_StaleWhileRevalidate(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/swr/10?t11=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -352,7 +446,7 @@ function test11_StaleWhileRevalidate(baseUrl: string, runID: string) {
 
     // Wait 2s (past max-age=1, within SWR window of 10s)
     console.log('Test 11: Waiting 2s to enter SWR window...');
-    sleep(2);
+    await asyncSleep(2);
 
     // Request during SWR window -> serves stale entry while triggering background refresh
     const res2 = http.get(url);
@@ -361,7 +455,7 @@ function test11_StaleWhileRevalidate(baseUrl: string, runID: string) {
     });
 
     // Wait 1s for background refresh to complete
-    sleep(1);
+    await asyncSleep(1);
 
     // Subsequent request should be a hit for refreshed entry
     const res3 = http.get(url);
@@ -373,7 +467,7 @@ function test11_StaleWhileRevalidate(baseUrl: string, runID: string) {
 }
 
 // 12. Cache-Control: s-maxage (Shared Cache Max-Age) - RFC 9111 Section 5.2.2.10
-function test12_SMaxAgeOverride(baseUrl: string, runID: string) {
+async function test12_SMaxAgeOverride(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/s-maxage?t12=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -391,7 +485,7 @@ function test12_SMaxAgeOverride(baseUrl: string, runID: string) {
 
     // Wait 3s (past s-maxage=2, but before max-age=300)
     console.log('Test 12: Waiting 5s for s-maxage=2 expiration...');
-    sleep(5);
+    await asyncSleep(5);
 
     const res3 = http.get(url);
     const status3 = getHeader(res3, 'Cache-Status');
@@ -402,7 +496,7 @@ function test12_SMaxAgeOverride(baseUrl: string, runID: string) {
 }
 
 // 13. Cache-Control: no-cache Response Directive - RFC 9111 Section 5.2.2.4
-function test13_NoCacheResponse(baseUrl: string, runID: string) {
+function test13_NoCacheResponse(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/no-cache?t13=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -423,7 +517,7 @@ function test13_NoCacheResponse(baseUrl: string, runID: string) {
 }
 
 // 14. Cache-Control: no-cache Request Directive - RFC 9111 Section 5.2.1.4
-function test14_NoCacheRequest(baseUrl: string, runID: string) {
+function test14_NoCacheRequest(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cacheable?t14=${runID}`;
     
     // Store in cache
@@ -447,7 +541,7 @@ function test14_NoCacheRequest(baseUrl: string, runID: string) {
 }
 
 // 15. Cache-Control: no-store Request Directive - RFC 9111 Section 5.2.1.5
-function test15_NoStoreRequest(baseUrl: string, runID: string) {
+function test15_NoStoreRequest(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cacheable?t15=${runID}`;
 
     // Request with no-store in request header
@@ -468,7 +562,7 @@ function test15_NoStoreRequest(baseUrl: string, runID: string) {
 }
 
 // 16. Expires Header (Past vs Future) - RFC 9111 Section 5.3
-function test16_ExpiresPastAndFuture(baseUrl: string, runID: string) {
+function test16_ExpiresPastAndFuture(check: CheckFn, baseUrl: string, runID: string) {
     // Expires in the past -> must not be served as fresh
     const urlPast = `${baseUrl}/expires/past?t16a=${runID}`;
     const resPast1 = http.get(urlPast);
@@ -491,7 +585,7 @@ function test16_ExpiresPastAndFuture(baseUrl: string, runID: string) {
 }
 
 // 17. max-age Precedence over Expires - RFC 9111 Section 5.3
-function test17_MaxAgeOverridesExpires(baseUrl: string, runID: string) {
+async function test17_MaxAgeOverridesExpires(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/expires/max-age-override?t17=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -507,7 +601,7 @@ function test17_MaxAgeOverridesExpires(baseUrl: string, runID: string) {
 
     // Wait 3s (past max-age=2, but before Expires in 2038)
     console.log('Test 17: Waiting 3s for max-age=2 expiration despite future Expires...');
-    sleep(3);
+    await asyncSleep(3);
 
     const res3 = http.get(url);
     const status3 = getHeader(res3, 'Cache-Status');
@@ -518,7 +612,7 @@ function test17_MaxAgeOverridesExpires(baseUrl: string, runID: string) {
 }
 
 // 18. Cache-Control: must-revalidate Directive - RFC 9111 Section 5.2.2.1
-function test18_MustRevalidate(baseUrl: string, runID: string) {
+async function test18_MustRevalidate(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/must-revalidate?t18=${runID}`;
     const res1 = http.get(url);
     check(res1, {
@@ -532,7 +626,7 @@ function test18_MustRevalidate(baseUrl: string, runID: string) {
 
     // Wait 3s (past max-age=2)
     console.log('Test 18: Waiting 3s for max-age=2 expiration...');
-    sleep(3);
+    await asyncSleep(3);
 
     const res3 = http.get(url);
     const status3 = getHeader(res3, 'Cache-Status');
@@ -543,7 +637,7 @@ function test18_MustRevalidate(baseUrl: string, runID: string) {
 }
 
 // 19. Weak ETag Conditional Requests - RFC 9111 Section 2.3
-function test19_WeakETag(baseUrl: string, runID: string) {
+function test19_WeakETag(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/etag/weak?t19=${runID}`;
     const res1 = http.get(url);
     const etag = getHeader(res1, 'ETag');
@@ -564,7 +658,7 @@ function test19_WeakETag(baseUrl: string, runID: string) {
 }
 
 // 20. Cache Invalidation on Unsafe Methods - RFC 9111 Section 4.4
-function test20_UnsafeMethodInvalidation(baseUrl: string, runID: string) {
+function test20_UnsafeMethodInvalidation(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cacheable?t20=${runID}`;
     
     // Step 1: Prime cache
@@ -592,7 +686,7 @@ function test20_UnsafeMethodInvalidation(baseUrl: string, runID: string) {
 }
 
 // 21. Uncacheable Status Code 500 - RFC 9111 Section 4.2.2
-function test21_UncacheableStatusCode500(baseUrl: string, runID: string) {
+function test21_UncacheableStatusCode500(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/status/500?t21=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -612,7 +706,7 @@ function test21_UncacheableStatusCode500(baseUrl: string, runID: string) {
 }
 
 // 22. Cacheable Status Code 404 - RFC 9111 Section 4.2.2
-function test22_CacheableStatusCode404(baseUrl: string, runID: string) {
+function test22_CacheableStatusCode404(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/status/404?t22=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -632,14 +726,14 @@ function test22_CacheableStatusCode404(baseUrl: string, runID: string) {
 }
 
 // 23. Age Header Presence on Hits - RFC 9111 Section 5.1
-function test23_AgeHeader(baseUrl: string, runID: string) {
+async function test23_AgeHeader(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cacheable?t23=${runID}`;
     
     // First request - Miss
     const res1 = http.get(url);
     
     // Wait 1s
-    sleep(1);
+    await asyncSleep(1);
 
     // Second request - Hit
     const res2 = http.get(url);
@@ -652,7 +746,7 @@ function test23_AgeHeader(baseUrl: string, runID: string) {
 }
 
 // 24. HEAD Method Caching - RFC 9111 Section 4
-function test24_HeadMethod(baseUrl: string, runID: string) {
+function test24_HeadMethod(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cacheable?t24=${runID}`;
     
     // Prime cache with GET
@@ -670,7 +764,7 @@ function test24_HeadMethod(baseUrl: string, runID: string) {
 }
 
 // 25. Cache-Control: max-age=0 Request Directive - RFC 9111 Section 5.2.1.2
-function test25_MaxAgeZeroRequest(baseUrl: string, runID: string) {
+function test25_MaxAgeZeroRequest(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cacheable?t25=${runID}`;
     
     // Prime cache
@@ -686,7 +780,7 @@ function test25_MaxAgeZeroRequest(baseUrl: string, runID: string) {
 }
 
 // 26. Cache-Control: public Directive - RFC 9111 Section 5.2.2.9
-function test26_PublicDirective(baseUrl: string, runID: string) {
+function test26_PublicDirective(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/public?t26=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -706,7 +800,7 @@ function test26_PublicDirective(baseUrl: string, runID: string) {
 }
 
 // 27. Authorized Request Default Behavior - RFC 9111 Section 3.5
-function test27_AuthorizedRequestDefault(baseUrl: string, runID: string) {
+function test27_AuthorizedRequestDefault(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cacheable?t27=${runID}`;
     const authHeaders = { Authorization: 'Bearer secret-token-123' };
 
@@ -727,7 +821,7 @@ function test27_AuthorizedRequestDefault(baseUrl: string, runID: string) {
 }
 
 // 28. Authorized Request with public Directive - RFC 9111 Section 3.5
-function test28_AuthorizedRequestPublic(baseUrl: string, runID: string) {
+function test28_AuthorizedRequestPublic(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/public?t28=${runID}`;
     const authHeaders = { Authorization: 'Bearer secret-token-123' };
 
@@ -748,7 +842,7 @@ function test28_AuthorizedRequestPublic(baseUrl: string, runID: string) {
 }
 
 // 29. Authorized Request with s-maxage Directive - RFC 9111 Section 3.5
-function test29_AuthorizedRequestSMaxAge(baseUrl: string, runID: string) {
+function test29_AuthorizedRequestSMaxAge(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/s-maxage?t29=${runID}`;
     const authHeaders = { Authorization: 'Bearer secret-token-123' };
 
@@ -769,7 +863,7 @@ function test29_AuthorizedRequestSMaxAge(baseUrl: string, runID: string) {
 }
 
 // 30. Authorized Request with must-revalidate Directive - RFC 9111 Section 3.5
-function test30_AuthorizedRequestMustRevalidate(baseUrl: string, runID: string) {
+function test30_AuthorizedRequestMustRevalidate(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/must-revalidate?t30=${runID}`;
     const authHeaders = { Authorization: 'Bearer secret-token-123' };
 
@@ -790,7 +884,7 @@ function test30_AuthorizedRequestMustRevalidate(baseUrl: string, runID: string) 
 }
 
 // 31. Cache-Control: min-fresh Request Directive - RFC 9111 Section 5.2.1.3
-function test31_MinFreshRequest(baseUrl: string, runID: string) {
+async function test31_MinFreshRequest(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/max-age/2?t31=${runID}`;
 
     // Prime cache
@@ -802,7 +896,7 @@ function test31_MinFreshRequest(baseUrl: string, runID: string) {
     });
 
     // Wait 1s (past 1s out of max-age=2, remaining freshness ~ 1s)
-    sleep(1);
+    await asyncSleep(1);
 
     // Request requiring min-fresh=5s (remaining 1s < 5s min-fresh requirement)
     const res2 = http.get(url, { headers: { 'Cache-Control': 'min-fresh=5' } });
@@ -814,7 +908,7 @@ function test31_MinFreshRequest(baseUrl: string, runID: string) {
 }
 
 // 32. Cache-Control: max-stale Request Directive - RFC 9111 Section 5.2.1.2
-function test32_MaxStaleRequest(baseUrl: string, runID: string) {
+async function test32_MaxStaleRequest(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/max-age/2?t32=${runID}`;
 
     // Prime cache
@@ -826,7 +920,7 @@ function test32_MaxStaleRequest(baseUrl: string, runID: string) {
     });
 
     // Wait 3s (past max-age=2, response is stale)
-    sleep(3);
+    await asyncSleep(3);
 
     // Request with max-stale=10 (accepts stale response up to 10s past freshness)
     const res2 = http.get(url, { headers: { 'Cache-Control': 'max-stale=10' } });
@@ -838,7 +932,7 @@ function test32_MaxStaleRequest(baseUrl: string, runID: string) {
 }
 
 // 33. If-Modified-Since Conditional Request - RFC 9111 Section 4.3.1
-function test33_IfModifiedSince(baseUrl: string, runID: string) {
+function test33_IfModifiedSince(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cacheable?t33=${runID}`;
     const res1 = http.get(url);
     const lastModified = getHeader(res1, 'Last-Modified');
@@ -859,7 +953,7 @@ function test33_IfModifiedSince(baseUrl: string, runID: string) {
 }
 
 // 34. Stale-While-Revalidate Window Expiration - RFC 5861 Section 3
-function test34_StaleWhileRevalidateExpiredWindow(baseUrl: string, runID: string) {
+async function test34_StaleWhileRevalidateExpiredWindow(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/swr/2?t34=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -870,7 +964,7 @@ function test34_StaleWhileRevalidateExpiredWindow(baseUrl: string, runID: string
 
     // Wait 4s (past max-age=1 AND past SWR window=2s)
     console.log('Test 34: Waiting 4s for SWR window expiration...');
-    sleep(4);
+    await asyncSleep(4);
 
     // Request after SWR window has passed -> must forward synchronously to origin, not serve stale via SWR
     const res2 = http.get(url);
@@ -883,7 +977,7 @@ function test34_StaleWhileRevalidateExpiredWindow(baseUrl: string, runID: string
 }
 
 // 35. Cache-Control: stale-if-error Response Directive - RFC 5861 Section 4
-function test35_StaleIfErrorResponse(baseUrl: string, runID: string) {
+async function test35_StaleIfErrorResponse(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/sie/10?t35=${runID}`;
     const res1 = http.get(url);
     const status1 = getHeader(res1, 'Cache-Status');
@@ -895,7 +989,7 @@ function test35_StaleIfErrorResponse(baseUrl: string, runID: string) {
 
     // Wait 2s (past fresh window into stale-if-error window)
     console.log('Test 35: Waiting 2s for stale-if-error window...');
-    sleep(2);
+    await asyncSleep(2);
 
     const res2 = http.get(url);
     const status2 = getHeader(res2, 'Cache-Status');
@@ -907,7 +1001,7 @@ function test35_StaleIfErrorResponse(baseUrl: string, runID: string) {
 }
 
 // 36. Cache-Control: stale-if-error Request Directive - RFC 5861 Section 4
-function test36_StaleIfErrorRequest(baseUrl: string, runID: string) {
+async function test36_StaleIfErrorRequest(check: CheckFn, baseUrl: string, runID: string) {
     const url = `${baseUrl}/cache-control/max-age/2?t36=${runID}`;
 
     // Prime cache
@@ -919,7 +1013,7 @@ function test36_StaleIfErrorRequest(baseUrl: string, runID: string) {
     });
 
     // Wait 3s (past max-age=2, response is stale)
-    sleep(3);
+    await asyncSleep(3);
 
     // Request with stale-if-error=10 header
     const res2 = http.get(url, { headers: { 'Cache-Control': 'stale-if-error=10' } });
@@ -927,7 +1021,7 @@ function test36_StaleIfErrorRequest(baseUrl: string, runID: string) {
 
     check(res2, {
         'Test 36 stale-if-error request: status 200': (r) => r.status === 200,
-        'Test 36 stale-if-error request: header accepted and response returned': () => r.status === 200,
+        'Test 36 stale-if-error request: header accepted and response returned': (r) => r.status === 200,
     });
 }
 

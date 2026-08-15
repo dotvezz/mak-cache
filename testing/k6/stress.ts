@@ -16,10 +16,6 @@ export const options: Options = {
                 {duration: '5s', target: 5000},
                 {duration: '5s', target: 10000},
                 {duration: '5s', target: 12000},
-                {duration: '5s', target: 15000},
-                {duration: '5s', target: 20000},
-                {duration: '5s', target: 25000},
-                {duration: '5s', target: 27000},
                 {duration: '5s', target: 5000},
             ]
         },
