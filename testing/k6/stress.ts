@@ -16,6 +16,8 @@ export const options: Options = {
                 {duration: '5s', target: 5000},
                 {duration: '5s', target: 10000},
                 {duration: '5s', target: 12000},
+                {duration: '5s', target: 20000},
+                {duration: '5s', target: 25000},
                 {duration: '5s', target: 5000},
             ]
         },
@@ -23,7 +25,7 @@ export const options: Options = {
 };
 
 export const oneLargeJSON = () => {
-    const res = getPath(8081, "large.json");
+    const res = getPath(8086, "large.json");
 
     check(res, {
         'status is 200': (r) => r.status === 200,
@@ -33,5 +35,5 @@ export const oneLargeJSON = () => {
 }
 
 function getPath(port: number, id: string) {
-    return http.get(`http://localhost:${port}/${id}`);
+    return http.get(`http://localhost:${port}/file/${id}`);
 }

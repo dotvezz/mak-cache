@@ -2,14 +2,14 @@
     order cache before reverse_proxy
     cache {
         timing {
-            ttl 5s
+            ttl 1m
         }
 
         metadata_storage otter {
-            memory_limit 16MB
+            memory_limit 1GB
         }
         storage otter {
-            memory_limit 768MB
+            memory_limit 8GB
         }
     }
 }
@@ -24,7 +24,12 @@
 }
 
 :8080 {
-    route * {
+    handle_path /file/* {
+        cache
+        reverse_proxy fileserver
+    }
+
+    handle {
         cache
         reverse_proxy mock-origin:8080
     }
