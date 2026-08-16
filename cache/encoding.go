@@ -170,29 +170,6 @@ func decodeBool(r Reader) (_ bool, err error) {
 	return i > 0, nil
 }
 
-func (e *Entry) Size() int {
-	var total = 8 + // 8 bytes for the Status int
-		24 + // 24 bytes for the body slice header
-		24 // 24 bytes for the header slice header
-
-	// embedded metadata size
-	total += e.Metadata.Size()
-
-	// body size
-	total += cap(e.Body)
-
-	// headers
-	if cap(e.Headers) > 0 {
-		total += cap(e.Headers) * 32 // 32 bytes for each element
-		for i := range e.Headers {
-			total += len(e.Headers[i][0])
-			total += len(e.Headers[i][1])
-		}
-	}
-
-	return total
-}
-
 func (e *Entry) MarshalTo(buf Writer) (err error) {
 	err = binary.Write(buf, binary.BigEndian, entrySignature)
 	if err != nil {
@@ -268,27 +245,6 @@ func (e *Entry) Unmarshal(r Reader) (err error) {
 	}
 
 	return err
-}
-
-func (e *Metadata) Size() int {
-	var total = 16 + // 16 bytes for the ETag string header
-		24 + // 24 bytes for the Vary slice header
-		24 + // 24 bytes for the CacheControl slice header
-		24 + // 24 bytes for the ttl time.Time
-		1 // 1 byte for NeedsRevalidation
-
-	total += len(e.ETag)
-
-	for i := range e.Vary {
-		// 16 for header, plus the string length
-		total += 16 + len(e.Vary[i])
-	}
-	for i := range e.CacheControl {
-		// 16 for header, plus the string length
-		total += 16 + len(e.CacheControl[i])
-	}
-
-	return total
 }
 
 func (m *Metadata) MarshalTo(buf Writer) (err error) {

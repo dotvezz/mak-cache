@@ -7,7 +7,8 @@ import (
 )
 
 type Storable interface {
-	Size() int
+	HeapSize() int
+	RefreshHeapSize()
 	MarshalTo(cache.Writer) error
 	Unmarshal(cache.Reader) error
 }

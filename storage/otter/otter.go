@@ -41,7 +41,7 @@ func NewProvider[T storage.Storable](cfg config.OtterConfig) (*Provider[T], erro
 		InitialCapacity: 1000,
 		Weigher: func(key string, value T) uint32 {
 			// plus 8 bytes for the pointer to the value
-			return uint32(len(key)+value.Size()) + 8
+			return uint32(len(key)+value.HeapSize()) + 8
 		},
 	})
 
