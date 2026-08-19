@@ -9,6 +9,11 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
+var (
+	entryBaseHeapSize = int(unsafe.Sizeof(Entry{}))
+	metaBaseHeapSize  = int(unsafe.Sizeof(Metadata{}))
+)
+
 type Entry struct {
 	Metadata
 	Status  int
@@ -16,24 +21,29 @@ type Entry struct {
 	Headers [][2]string
 }
 
+func (e *Entry) RefreshHeapSize() {
+
+}
+
 func (e *Entry) HeapSize() int {
-	var total = 8 + // 8 bytes for the Status int
-		24 + // 24 bytes for the body slice header
-		24 // 24 bytes for the header slice header
+	total := entryBaseHeapSize
 
 	// embedded metadata size
 	total += e.Metadata.HeapSize()
 
 	// body size
-	total += cap(e.Body)
+	total += sizeClass(cap(e.Body))
 
 	// headers
-	if cap(e.Headers) > 0 {
-		total += cap(e.Headers) * 32 // 32 bytes for each element
+	if e.Headers != nil {
+		// backing array
+		total += cap(e.Headers) * int(unsafe.Sizeof([2]string{}))
+
 		for i := range e.Headers {
-			total += len(e.Headers[i][0])
-			total += len(e.Headers[i][1])
+			total += sizeClass(len(e.Headers[i][0]))
+			total += sizeClass(len(e.Headers[i][1]))
 		}
+
 	}
 
 	return total
@@ -70,17 +80,19 @@ type Metadata struct {
 	CacheControl      []string
 	Date              time.Time
 	Expires           time.Time
-	NeedsRevalidation bool
+	Evict             time.Time
 	Linked            []string
+	NeedsRevalidation bool
 }
 
-var metaBaseHeapSize = int(unsafe.Sizeof(Metadata{}))
+func (m *Metadata) EvictAt() time.Time {
+	return m.Evict
+}
 
 func (m *Metadata) RefreshHeapSize() {
 	total := metaBaseHeapSize
 
-	total += len(m.ETag)
-
+	total += sizeClass(len(m.ETag))
 	total += stringsHeapSize(m.Vary)
 	total += stringsHeapSize(m.CacheControl)
 	total += stringsHeapSize(m.Linked)
@@ -100,7 +112,7 @@ func stringsHeapSize(s []string) int {
 	total := cap(s) * int(unsafe.Sizeof(""))
 
 	for i := range s {
-		total += len(s[i])
+		total += sizeClass(len(s[i]))
 	}
 
 	return total

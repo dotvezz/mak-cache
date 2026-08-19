@@ -2,7 +2,7 @@
     order cache before reverse_proxy
     cache {
         otter
-        ttl 1m
+        ttl 120s
     }
 }
 

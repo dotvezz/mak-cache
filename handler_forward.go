@@ -17,6 +17,7 @@ import (
 
 func (h *Handler) fwdUpstream(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) (e *cache.Entry, err error) {
 	e = new(cache.Entry)
+
 	buf := bytes.NewBuffer(make([]byte, 0, 1024))
 	rec := caddyhttp.NewResponseRecorder(w, buf, h.shouldBuffer)
 
@@ -34,7 +35,7 @@ func (h *Handler) fwdUpstream(w http.ResponseWriter, r *http.Request, next caddy
 	return e, err
 }
 
-func (h *Handler) backgroundRefresh(req *http.Request, entry *cache.Entry, cacheStatus *headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) {
+func (h *Handler) backgroundRefresh(req *http.Request, meta *cache.Metadata, entry *cache.Entry, cacheStatus *headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) {
 	// After it finishes writing downstream, caddy runs a deferred timeout cancel.
 	// Since we're running this in the background, that cancel would be a problem so we'll just ignore it here.
 	newCtx := context.WithoutCancel(req.Context())
@@ -48,7 +49,7 @@ func (h *Handler) backgroundRefresh(req *http.Request, entry *cache.Entry, cache
 
 		noop := responses.NoopWriter{}
 
-		_ = h.revalidate(noop, req, entry, cacheStatus, requestTime, next)
+		_ = h.revalidate(noop, req, meta, entry, cacheStatus, requestTime, next)
 	}()
 }
 
@@ -92,6 +93,14 @@ func (h *Handler) processResponseHeaders(reqH, respH http.Header, m *cache.Metad
 		} else {
 			return false
 		}
+	}
+
+	// Set Eviction timeline
+	m.Evict = m.Expires
+	if respCC.MaxStale != nil {
+		m.Evict = m.Evict.Add(*respCC.MaxStale)
+	} else {
+		m.Evict = m.Evict.Add(time.Duration(h.Config.Timing.MaxStale))
 	}
 
 	// Not cacheable if Vary contains "*"

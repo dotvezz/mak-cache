@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"time"
 
 	"github.com/dotvezz/caddy-cache/cache"
 )
@@ -11,6 +12,7 @@ type Storable interface {
 	RefreshHeapSize()
 	MarshalTo(cache.Writer) error
 	Unmarshal(cache.Reader) error
+	EvictAt() time.Time
 }
 
 type Provider[T Storable] interface {

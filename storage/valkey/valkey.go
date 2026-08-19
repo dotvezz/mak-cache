@@ -12,12 +12,13 @@ import (
 	vkey "github.com/valkey-io/valkey-go"
 )
 
+var now = time.Now
+
 type Provider[C any, T interface {
 	*C
 	storage.Storable
 }] struct {
 	client vkey.Client
-	now    func() time.Time
 }
 
 func (p Provider[C, T]) Get(ctx context.Context, key string) (T, error) {
@@ -47,7 +48,15 @@ func (p Provider[C, T]) Set(ctx context.Context, key string, value T) error {
 		return fmt.Errorf("failed to marshal value %q: %w", key, err)
 	}
 
-	err = p.client.Do(ctx, p.client.B().Set().Key(key).Value(vkey.BinaryString(bs.Bytes())).Build()).Error()
+	err = p.client.Do(ctx,
+		p.client.
+			B().
+			Set().
+			Key(key).
+			Value(vkey.BinaryString(bs.Bytes())).
+			Ex(value.EvictAt().Sub(now())).
+			Build(),
+	).Error()
 	if err != nil {
 		return fmt.Errorf("failed to set value %q: %w", key, err)
 	}
@@ -69,6 +78,5 @@ func NewProvider[C any, T interface {
 
 	return &Provider[C, T]{
 		client: client,
-		now:    time.Now,
 	}, err
 }
