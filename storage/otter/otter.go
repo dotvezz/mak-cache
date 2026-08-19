@@ -10,6 +10,8 @@ import (
 	"github.com/maypok86/otter/v2"
 )
 
+var now = time.Now
+
 type Provider[T storage.Storable] struct {
 	cache *otter.Cache[string, T]
 	now   func() time.Time
@@ -20,19 +22,18 @@ func (p Provider[T]) Get(_ context.Context, key string) (T, error) {
 	if !ok {
 		return r.Value, storage.ErrNotFound
 	}
+
 	return r.Value, nil
 }
 
 func (p Provider[T]) Set(_ context.Context, key string, value T) error {
+	value.RefreshHeapSize()
 	_, _ = p.cache.Set(key, value)
 	return nil
 }
 
-// Update is a noop for the otter provider. With Otter, T lives in heap and is mutable, and caddy-cache operates
-// directly with values from Get, including for setting refreshed expiry etc. So actually invoking p.cache.Set in Update
-// would be redundant.
-func (p Provider[T]) Update(_ context.Context, _ string, _ T) error {
-	return nil
+func (p Provider[T]) Update(_ context.Context, k string, value T) error {
+	return p.Set(nil, k, value)
 }
 
 func NewProvider[T storage.Storable](cfg config.OtterConfig) (*Provider[T], error) {
@@ -43,6 +44,9 @@ func NewProvider[T storage.Storable](cfg config.OtterConfig) (*Provider[T], erro
 			// plus 8 bytes for the pointer to the value
 			return uint32(len(key)+value.HeapSize()) + 8
 		},
+		ExpiryCalculator: otter.ExpiryWritingFunc[string, T](func(entry otter.Entry[string, T]) time.Duration {
+			return entry.Value.EvictAt().Sub(now())
+		}),
 	})
 
 	if err != nil {
@@ -51,6 +55,6 @@ func NewProvider[T storage.Storable](cfg config.OtterConfig) (*Provider[T], erro
 
 	return &Provider[T]{
 		cache: c,
-		now:   time.Now,
+		now:   now,
 	}, nil
 }

@@ -142,16 +142,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 
 	if requestRequiresRevalidation(reqCC, entry, requestTime) {
 		cacheStatus.FwdRequest = true
-		return h.revalidate(w, r, entry, cacheStatus, requestTime, next)
+		return h.revalidate(w, r, meta, entry, cacheStatus, requestTime, next)
 	}
 
 	if entry.NeedsRevalidation {
-		return h.revalidate(w, r, entry, cacheStatus, requestTime, next)
+		return h.revalidate(w, r, meta, entry, cacheStatus, requestTime, next)
 	}
 
 	if isStale(entry, requestTime) {
 		if h.canBackgroundRefresh(respCC, entry, requestTime) {
-			h.backgroundRefresh(r, entry, cacheStatus, requestTime, next)
+			h.backgroundRefresh(r, meta, entry, cacheStatus, requestTime, next)
 		} else {
 			cacheStatus.FwdStale = true
 			return h.forward(w, r, cacheStatus, requestTime, next)
@@ -166,12 +166,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 			if ifNoneMatch.Contains(entry.ETag) {
 				return h.notModified(w, cacheStatus, requestTime, entry)
 			}
-			return h.revalidate(w, r, entry, cacheStatus, requestTime, next)
+			return h.revalidate(w, r, meta, entry, cacheStatus, requestTime, next)
 		}
 	}
 
 	if respCC.NoCache {
-		return h.revalidate(w, r, entry, cacheStatus, requestTime, next)
+		return h.revalidate(w, r, meta, entry, cacheStatus, requestTime, next)
 	}
 
 	cacheStatus.Hit = true

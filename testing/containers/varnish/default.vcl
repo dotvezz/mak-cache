@@ -21,7 +21,7 @@ sub vcl_recv {
 }
 
 sub vcl_backend_response {
-    set beresp.ttl = 1m;
+    set beresp.ttl = 10s;
 }
 
 sub vcl_deliver {

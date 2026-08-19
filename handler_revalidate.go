@@ -11,7 +11,7 @@ import (
 	"github.com/dotvezz/caddy-cache/headers"
 )
 
-func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, entry *cache.Entry, cacheStatus *headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) (err error) {
+func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, meta *cache.Metadata, entry *cache.Entry, cacheStatus *headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) (err error) {
 	// We're holding on to a clone of the original request because we may need to reuse it, for example if the origin
 	// response has a Vary header.
 	// Because we're living in a Caddy handler, and upstream handlers may mutate the request, the original value of r
@@ -36,14 +36,18 @@ func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, entry *cach
 
 		if !rec.Buffered() {
 			if rec.Status() == http.StatusNotModified {
-				entry.Date = requestTime
-				entry.Expires = requestTime.Add(time.Duration(h.Timing.TTL))
-				err = h.updateEntry(r.Context(), cacheStatus.Key, entry)
-				if err != nil {
-					return false, err
+				cacheable := h.processResponseHeaders(r.Header, rClone.Header, meta, rec.Status())
+				if !cacheable {
+					return false, nil
 				}
 
-				err = h.setMetadata(r.Context(), cacheStatus.Key, &entry.Metadata)
+				meta.Date = requestTime
+				err = h.updateMetadata(r.Context(), cache.GenerateKey(rClone, h.Config.Key, nil), meta)
+
+				entry.Date = requestTime
+				entry.Expires = requestTime.Add(time.Duration(h.Timing.TTL))
+				entry.Metadata = *meta
+				err = h.updateEntry(r.Context(), cacheStatus.Key, entry)
 				return true, err
 			}
 
@@ -59,25 +63,21 @@ func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, entry *cach
 			return false, nil
 		}
 
-		m := &cache.Metadata{
-			Date:    requestTime,
-			Expires: requestTime.Add(time.Duration(h.Timing.TTL)),
-		}
+		meta.Date = requestTime
+		cacheable := h.processResponseHeaders(r.Header, rClone.Header, meta, rec.Status())
 
-		cacheable := h.processResponseHeaders(r.Header, rClone.Header, m, rec.Status())
-
-		entry.Metadata = *m
+		entry.Metadata = *meta
 		if cacheable && err == nil {
 			if !h.ETag.Disable {
 				h.setEtag(w, entry)
 			}
 
-			keyWithVary := cache.GenerateKey(rClone, h.Key, m.Vary)
+			keyWithVary := cache.GenerateKey(rClone, h.Key, meta.Vary)
 			err = h.updateEntry(r.Context(), keyWithVary, entry)
 			cacheStatus.Stored = err == nil
 		}
 
-		err = h.setMetadata(r.Context(), cacheStatus.Key, m)
+		err = h.setMetadata(r.Context(), cacheStatus.Key, meta)
 
 		return false, nil
 	})

@@ -2,13 +2,13 @@
     order cache before reverse_proxy
     cache {
         timing {
-            ttl 1m
+            ttl 10s
         }
 
-        metadata_storage otter {
-            memory_limit 1GB
+        metadata_storage in_memory {
+            memory_limit 256MB
         }
-        storage otter {
+        storage in_memory {
             memory_limit 8GB
         }
     }

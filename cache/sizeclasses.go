@@ -1,7 +1,8 @@
 package cache
 
-// approximateStringHeapSize does its thing with the assumption that the compilation target is
-func approximateStringHeapSize64(size int) int {
+// approximateStringHeapSize does its thing with the assumption that the compilation target is 64-bit architecture.
+// TODO: other architectures
+func sizeClass(size int) int {
 	switch {
 	case size == 0:
 		return 0

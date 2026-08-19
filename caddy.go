@@ -423,7 +423,7 @@ func parseStorageConfig(h caddyfileHelper) (config.StorageConfig, error) {
 	}
 	providerName := args[0]
 	switch providerName {
-	case "otter", "in-memory":
+	case "otter", "in_memory":
 		s.Otter = &config.OtterConfig{}
 		nesting := h.Nesting()
 		for h.NextBlock(nesting) {

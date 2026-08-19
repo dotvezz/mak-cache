@@ -2,11 +2,11 @@
     order cache before reverse_proxy
     cache {
         timing {
-            ttl 1m
+            ttl 10s
         }
 
-        metadata_storage valkey {
-            address valkey:6379
+        metadata_storage in_memory {
+            memory_limit 128MB
         }
         storage valkey {
             address valkey:6379
