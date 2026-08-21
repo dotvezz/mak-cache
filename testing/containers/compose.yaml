@@ -49,7 +49,7 @@ services:
       - mock-origin
       - fileserver
     environment:
-      VARNISH_SIZE: 768M
+      VARNISH_SIZE: 8G
       VARNISH_HTTP_PORT: 8083
     tmpfs:
       - /var/lib/varnish:exec
@@ -78,6 +78,7 @@ services:
       dockerfile: testing/containers/mock-origin/Containerfile
     volumes:
       - ../mock-responses:/srv:ro
+      - ../files:/srv/GET/file:ro
     ports:
       - 8085:8080
 

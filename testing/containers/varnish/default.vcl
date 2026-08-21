@@ -5,15 +5,10 @@ backend default {
     .port = "8080";
 }
 
-backend fileserver {
-    .host = "fileserver";
-    .port = "80";
-}
-
 sub vcl_recv {
     if (req.url ~ "^/file/") {
-        set req.backend_hint = fileserver;
-        set req.url = regsub(req.url, "^/file/([^?]*).*", "/\1");
+        set req.backend_hint = default;
+        set req.url = regsub(req.url, "^/file/", "/");
         return (hash);
     } else {
         set req.backend_hint = default;
@@ -21,7 +16,9 @@ sub vcl_recv {
 }
 
 sub vcl_backend_response {
-    set beresp.ttl = 10s;
+    set beresp.ttl = 120s;
+    set beresp.grace = 0s;
+    set beresp.keep = 0s;
 }
 
 sub vcl_deliver {

@@ -344,6 +344,25 @@ export function handleSummary(data: any) {
         }
     }
 
+    let mockOriginCountStr = 'N/A';
+    try {
+        const mockUrl = __ENV.MOCK_URL || __ENV.MOCK_ORIGIN || BASE_URL;
+        let res = http.get(`${mockUrl}/_requests`);
+        if (res.status === 200) {
+            const body = res.json() as any;
+            if (body && typeof body.count === 'number') {
+                mockOriginCountStr = `${body.count.toLocaleString()} reqs`;
+            } else if (!isNaN(parseInt(res.body as string, 10))) {
+                mockOriginCountStr = `${parseInt(res.body as string, 10).toLocaleString()} reqs`;
+            }
+
+            // Clear count from mock server after reading
+            http.del(`${mockUrl}/_requests`);
+        }
+    } catch (_) {
+        // Ignore errors when querying mock server count
+    }
+
     const reportBox = [
         '  Charts',
         '  --------------------------------------------------------------------------------------------------',
@@ -356,6 +375,7 @@ export function handleSummary(data: any) {
         '  Summary',
         '  --------------------------------------------------------------------------------------------------',
         `  • Total Completed Requests:  ${totalReqs.toLocaleString()} reqs`,
+        `  • Total Origin Requests:     ${mockOriginCountStr}`,
         `  • Throughput (req/s):        Overall Avg: ${avgRps.toFixed(1)} req/s  |  Peak 1s Window: ${peakRps.toLocaleString()} req/s (at sec ${peakSec})`,
         `  • Latency (Duration):        Overall Avg: ${overallAvgLat.toFixed(2)} ms  |  Overall P95: ${overallP95Lat.toFixed(2)} ms  (Peak 1s P95: ${peakP95Lat.toFixed(2)} ms)`,
         `  • Time To First Byte (TTFB): Overall Avg: ${overallAvgTTFB.toFixed(2)} ms  |  Overall P95: ${overallP95TTFB.toFixed(2)} ms  (Peak 1s P95: ${peakP95TTFB.toFixed(2)} ms)`,

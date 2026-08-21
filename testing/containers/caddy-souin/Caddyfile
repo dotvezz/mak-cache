@@ -1,5 +1,4 @@
 {
-    order cache before reverse_proxy
     cache {
         otter
         ttl 120s
@@ -9,7 +8,7 @@
 :8082 {
     handle_path /file/* {
         cache
-        reverse_proxy fileserver
+        reverse_proxy mock-origin:8080
     }
 
     handle {

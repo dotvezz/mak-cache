@@ -2,15 +2,11 @@
     order cache before reverse_proxy
     cache {
         timing {
-            ttl 10s
+            ttl 120s
         }
 
-        metadata_storage in_memory {
-            memory_limit 256MB
-        }
-        storage in_memory {
-            memory_limit 8GB
-        }
+        metadata in_memory 512MB
+        entries in_memory 8GB
     }
 }
 
@@ -26,7 +22,7 @@
 :8080 {
     handle_path /file/* {
         cache
-        reverse_proxy fileserver
+        reverse_proxy mock-origin:8080
     }
 
     handle {
