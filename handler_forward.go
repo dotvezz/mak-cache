@@ -150,12 +150,11 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 		return h.fwdUpstream(oneShot, r, next)
 	})
 
-	cacheStatus.FwdStatus = oneShot.Status()
-
 	if err != nil {
 		oneShot.Header().Set("Cache-Status", cacheStatus.String())
 		_ = oneShot.Fire()
 		if !errors.Is(err, errNotBuffered) {
+			cacheStatus.FwdStatus = oneShot.Status()
 			return err
 		}
 		return nil
@@ -188,6 +187,7 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 	oneShot.WriteHeader(entry.Status)
 
 	_, err = oneShot.Write(entry.Body)
+	cacheStatus.FwdStatus = entry.Status
 	w.Header().Set("Cache-Status", cacheStatus.String())
 	if err != nil {
 		h.Error("forward",

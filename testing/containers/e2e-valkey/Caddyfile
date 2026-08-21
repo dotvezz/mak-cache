@@ -5,12 +5,9 @@
             ttl 10s
         }
 
-        metadata_storage in_memory {
-            memory_limit 128MB
-        }
-        storage valkey {
-            address valkey:6379
-        }
+        metadata in_memory 128MB
+        entries in_memory 512MB
+        entries valkey valkey:6379
     }
 }
 
@@ -26,7 +23,7 @@
 :8080 {
     handle_path /file/* {
         cache
-        reverse_proxy fileserver
+        reverse_proxy mock-origin:8080
     }
 
     handle {

@@ -295,7 +295,7 @@ func parseFromCustomHelper(h caddyfileHelper, c *config.Config) (err error) {
 					return h.Errf("unknown coalesce configuration subkey %q", subKey)
 				}
 			}
-		case "storage":
+		case "entry_storage", "entries", "storage":
 			s, err := parseStorageConfig(h)
 			if err != nil {
 				return err
@@ -416,51 +416,60 @@ func parseTimingConfig(h caddyfileHelper, t *config.TimingConfig) (err error) {
 }
 
 func parseStorageConfig(h caddyfileHelper) (config.StorageConfig, error) {
+	var valStr string
 	var s config.StorageConfig
 	args := h.RemainingArgs()
-	if len(args) != 1 {
-		return s, h.Errf("expected exactly one argument for storage provider name, got %v", args)
+	if len(args) < 1 || len(args) > 2 {
+		return s, h.Errf("expected one or two arguments for storage provider name, got %d: %v", len(args), args)
 	}
 	providerName := args[0]
 	switch providerName {
 	case "otter", "in_memory":
 		s.Otter = &config.OtterConfig{}
-		nesting := h.Nesting()
-		for h.NextBlock(nesting) {
-			subKey := h.Val()
-			switch subKey {
-			case "memory_limit":
-				var valStr string
-				if !h.Args(&valStr) {
-					return s, h.ArgErr()
+		if len(args) == 1 {
+			nesting := h.Nesting()
+			for h.NextBlock(nesting) {
+				subKey := h.Val()
+				switch subKey {
+				case "memory_limit":
+					if !h.Args(&valStr) {
+						return s, h.ArgErr()
+					}
+				default:
+					return s, h.Errf("unknown in_memory/otter storage configuration subkey %q", subKey)
 				}
-				val, err := strconv.Atoi(valStr)
-				if err != nil {
-					var val2 uint64
-					val2, err = humanize.ParseBytes(valStr)
-					val = int(val2)
-				}
-				if err != nil {
-					return s, h.Errf("invalid memory_limit value %q: %v", valStr, err)
-				}
-				s.Otter.MemoryLimit = uint64(val)
-			default:
-				return s, h.Errf("unknown in_memory/otter storage configuration subkey %q", subKey)
 			}
+		} else {
+			valStr = args[1]
 		}
+
+		val, err := strconv.Atoi(valStr)
+		if err != nil {
+			var val2 uint64
+			val2, err = humanize.ParseBytes(valStr)
+			val = int(val2)
+		}
+		if err != nil {
+			return s, h.Errf("invalid memory_limit value %q: %v", valStr, err)
+		}
+		s.Otter.MemoryLimit = uint64(val)
 	case "valkey", "redis":
 		s.Valkey = &config.ValkeyConfig{}
-		nesting := h.Nesting()
-		for h.NextBlock(nesting) {
-			subKey := h.Val()
-			switch subKey {
-			case "address":
-				if !h.Args(&s.Valkey.Address) {
-					return s, h.ArgErr()
+		if len(args) == 1 {
+			nesting := h.Nesting()
+			for h.NextBlock(nesting) {
+				subKey := h.Val()
+				switch subKey {
+				case "address":
+					if !h.Args(&s.Valkey.Address) {
+						return s, h.ArgErr()
+					}
+				default:
+					return s, h.Errf("unknown valkey/redis storage configuration subkey %q", subKey)
 				}
-			default:
-				return s, h.Errf("unknown valkey/redis storage configuration subkey %q", subKey)
 			}
+		} else {
+			s.Valkey.Address = args[1]
 		}
 	default:
 		return s, h.Errf("unknown storage provider %q", providerName)

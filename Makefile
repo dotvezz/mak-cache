@@ -34,12 +34,18 @@ e2e-all:
 benchmark:
 	go tool k6 run ./testing/k6/benchmark.ts
 
-benchmark-all:
-	@for target in "caddy-otter:8086" "caddy-valkey:8087" "caddy-souin:8082" "varnish:8083"; do \
-		name=$${target%%:*}; \
-		port=$${target##*:}; \
-		echo "=================================================="; \
-		echo " Benchmarking $$name (port $$port)"; \
-		echo "=================================================="; \
-		PORT=$$port go tool k6 run ./testing/k6/benchmark.ts || exit 1; \
-	done
+benchmark-souin:
+	PORT=8082 go tool k6 run ./testing/k6/benchmark.ts
+
+benchmark-varnish:
+	PORT=8083 go tool k6 run ./testing/k6/benchmark.ts
+
+#benchmark-all:
+#	@for target in "caddy-otter:8086" "caddy-valkey:8087" "caddy-souin:8082" "varnish:8083"; do \
+#		name=$${target%%:*}; \
+#		port=$${target##*:}; \
+#		echo "=================================================="; \
+#		echo " Benchmarking $$name (port $$port)"; \
+#		echo "=================================================="; \
+#		PORT=$$port go tool k6 run ./testing/k6/benchmark.ts || exit 1; \
+#	done

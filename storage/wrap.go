@@ -22,8 +22,8 @@ func (w Wrapper[T]) Get(ctx context.Context, k string) (v T, err error) {
 
 	if err != nil && errors.Is(err, ErrNotFound) {
 		v, err = w.inner.Get(ctx, k)
-		if err != nil {
-			// Since we found it on the outer, silently try to set it on the outer to bring the entry into the
+		if err == nil {
+			// Since we found it on the inner, silently try to set it on the outer to bring the entry into the
 			// nearer layer.
 			_ = w.outer.Set(ctx, k, v)
 		}
@@ -45,7 +45,6 @@ func (w Wrapper[T]) Set(ctx context.Context, k string, v T) error {
 }
 
 func (w Wrapper[T]) Update(ctx context.Context, k string, v T) error {
-
 	err1 := w.inner.Update(ctx, k, v)
 	err2 := w.outer.Update(ctx, k, v)
 
