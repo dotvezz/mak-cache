@@ -10,21 +10,18 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/dotvezz/caddy-cache/cache"
-	"github.com/dotvezz/caddy-cache/headers"
-	"github.com/dotvezz/caddy-cache/responses"
+	"github.com/dotvezz/mak-cache/cache"
+	"github.com/dotvezz/mak-cache/headers"
+	"github.com/dotvezz/mak-cache/responses"
 )
 
-func (h *Handler) fwdUpstream(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) (e *cache.Entry, err error) {
+func (m *Middleware) fwdUpstream(w http.ResponseWriter, r *http.Request, next http.Handler) (e *cache.Entry, err error) {
 	e = new(cache.Entry)
 
 	buf := bytes.NewBuffer(make([]byte, 0, 1024))
-	rec := caddyhttp.NewResponseRecorder(w, buf, h.shouldBuffer)
+	rec := caddyhttp.NewResponseRecorder(w, buf, m.shouldBuffer)
 
-	err = next.ServeHTTP(rec, r)
-	if err != nil {
-		return nil, err
-	}
+	next.ServeHTTP(rec, r)
 
 	if !rec.Buffered() {
 		return nil, errNotBuffered
@@ -35,7 +32,7 @@ func (h *Handler) fwdUpstream(w http.ResponseWriter, r *http.Request, next caddy
 	return e, err
 }
 
-func (h *Handler) backgroundRefresh(req *http.Request, meta *cache.Metadata, entry *cache.Entry, cacheStatus *headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) {
+func (m *Middleware) backgroundRefresh(req *http.Request, meta *cache.Metadata, entry *cache.Entry, cacheStatus *headers.CacheStatus, requestTime time.Time, next http.Handler) {
 	// After it finishes writing downstream, caddy runs a deferred timeout cancel.
 	// Since we're running this in the background, that cancel would be a problem so we'll just ignore it here.
 	newCtx := context.WithoutCancel(req.Context())
@@ -43,21 +40,21 @@ func (h *Handler) backgroundRefresh(req *http.Request, meta *cache.Metadata, ent
 
 	go func() {
 		// Since we removed the cancel above, we want to ensure we have a timeout
-		ctx, cancel := context.WithTimeout(req.Context(), h.Refresh.ResolveTimeout())
+		ctx, cancel := context.WithTimeout(req.Context(), m.Refresh.ResolveTimeout())
 		defer cancel()
 		req = req.WithContext(ctx)
 
 		noop := responses.NoopWriter{}
 
-		_ = h.revalidate(noop, req, meta, entry, cacheStatus, requestTime, next)
+		_ = m.revalidate(noop, req, meta, entry, cacheStatus, requestTime, next)
 	}()
 }
 
-func (h *Handler) processResponseHeaders(reqH, respH http.Header, m *cache.Metadata, status int) (cacheable bool) {
+func (m *Middleware) processResponseHeaders(reqH, respH http.Header, md *cache.Metadata, status int) (cacheable bool) {
 	// Handle the Cache-Control header, set metadata and cacheability
 	var respCC headers.CacheControl
 	if cc := respH.Values("Cache-Control"); len(cc) > 0 {
-		if h.Config.Headers.OverrideOriginCacheControl {
+		if m.Config.Headers.OverrideOriginCacheControl {
 			return true
 		}
 
@@ -66,13 +63,13 @@ func (h *Handler) processResponseHeaders(reqH, respH http.Header, m *cache.Metad
 		err := respCC.FromString(cc[len(cc)-1])
 		if err == nil {
 			// Only load Cache-Control into the metadata if we were able to successfully parse it
-			m.CacheControl = respCC.Directives()
+			md.CacheControl = respCC.Directives()
 		}
 
 		if respCC.SMaxAge != nil {
-			m.Expires = h.now().Add(*respCC.SMaxAge)
+			md.Expires = now().Add(*respCC.SMaxAge)
 		} else if respCC.MaxAge != nil {
-			m.Expires = h.now().Add(*respCC.MaxAge)
+			md.Expires = now().Add(*respCC.MaxAge)
 		}
 
 		return respCC.Cacheable(true)
@@ -89,25 +86,25 @@ func (h *Handler) processResponseHeaders(reqH, respH http.Header, m *cache.Metad
 		expires := headers.Expires{}
 		err := expires.FromString(exps)
 		if err == nil {
-			m.Expires = time.Time(expires)
+			md.Expires = time.Time(expires)
 		} else {
 			return false
 		}
 	}
 
 	// Set Eviction timeline
-	m.Evict = m.Expires
+	md.Evict = md.Expires
 	if respCC.MaxStale != nil {
-		m.Evict = m.Evict.Add(*respCC.MaxStale)
+		md.Evict = md.Evict.Add(*respCC.MaxStale)
 	} else {
-		m.Evict = m.Evict.Add(time.Duration(h.Config.Timing.MaxStale))
+		md.Evict = md.Evict.Add(time.Duration(m.Config.Timing.MaxStale))
 	}
 
 	// Not cacheable if Vary contains "*"
 	vary := headers.Vary{}
 	vary.FromHeaders(respH.Values("Vary"))
-	m.Vary = vary.ValsWithout(h.Headers.IgnoreVary)
-	if slices.Contains(m.Vary, "*") {
+	md.Vary = vary.ValsWithout(m.Headers.IgnoreVary)
+	if slices.Contains(md.Vary, "*") {
 		return false
 	}
 
@@ -116,7 +113,7 @@ func (h *Handler) processResponseHeaders(reqH, respH http.Header, m *cache.Metad
 	return slices.Contains(heuristicallyCacheable, status)
 }
 
-func (h *Handler) setEtag(resp http.ResponseWriter, entry *cache.Entry) {
+func (m *Middleware) setEtag(resp http.ResponseWriter, entry *cache.Entry) {
 	if etag := resp.Header().Get("ETag"); etag != "" {
 		// Get the etag header from upstream
 		entry.ETag = etag
@@ -124,13 +121,13 @@ func (h *Handler) setEtag(resp http.ResponseWriter, entry *cache.Entry) {
 		if etagHeader := entry.GetHeader("ETag"); len(etagHeader) > 0 {
 			entry.ETag = etagHeader[0]
 		} else {
-			entry.ETag = cache.GenerateEtag(entry, h.ETag)
+			entry.ETag = cache.GenerateEtag(entry, m.ETag)
 		}
 		resp.Header().Set("ETag", entry.ETag)
 	}
 }
 
-func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) error {
+func (m *Middleware) forward(w http.ResponseWriter, r *http.Request, cacheStatus *headers.CacheStatus, requestTime time.Time, next http.Handler) error {
 	// Even if we're handling a conditional request, if we're forwarding then we want to attempt to cache the full
 	// response instead of just passing the possible 304 down.
 	r.Header.Del("If-None-Match")
@@ -146,8 +143,8 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 	var e any
 	var err error
 
-	e, err, cacheStatus.Collapsed = h.singleflight.Do(cacheStatus.Key, func() (any, error) {
-		return h.fwdUpstream(oneShot, r, next)
+	e, err, cacheStatus.Collapsed = m.singleflight.Do(cacheStatus.Key, func() (any, error) {
+		return m.fwdUpstream(oneShot, r, next)
 	})
 
 	if err != nil {
@@ -162,27 +159,27 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 
 	entry := e.(*cache.Entry)
 
-	m := &cache.Metadata{
+	md := &cache.Metadata{
 		Date:    requestTime,
-		Expires: requestTime.Add(time.Duration(h.Timing.TTL)),
+		Expires: requestTime.Add(time.Duration(m.Timing.TTL)),
 	}
 
-	cacheable := h.processResponseHeaders(rClone.Header, oneShot.Header(), m, entry.Status)
+	cacheable := m.processResponseHeaders(rClone.Header, oneShot.Header(), md, entry.Status)
 
-	entry.Metadata = *m
+	entry.Metadata = *md
 	if cacheable {
-		if !h.ETag.Disable {
-			h.setEtag(oneShot, entry)
+		if !m.ETag.Disable {
+			m.setEtag(oneShot, entry)
 		}
 
-		keyWithVary := cache.GenerateKey(rClone, h.Key, m.Vary)
-		m.Linked = append(m.Linked, keyWithVary)
-		err = h.setEntry(r.Context(), keyWithVary, entry)
+		keyWithVary := cache.GenerateKey(rClone, m.Key, md.Vary)
+		md.Linked = append(md.Linked, keyWithVary)
+		err = m.setEntry(r.Context(), keyWithVary, entry)
 		cacheStatus.Stored = err == nil
 	}
 
 	// Set metadata regardless of entry storeability/cacheability
-	err = h.setMetadata(r.Context(), cacheStatus.Key, m)
+	err = m.setMetadata(r.Context(), cacheStatus.Key, md)
 
 	oneShot.WriteHeader(entry.Status)
 
@@ -190,7 +187,7 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, cacheStatus *h
 	cacheStatus.FwdStatus = entry.Status
 	w.Header().Set("Cache-Status", cacheStatus.String())
 	if err != nil {
-		h.Error("forward",
+		m.Error("forward",
 			slog.String("description", "error writing response body"),
 			slog.String("err", err.Error()),
 		)

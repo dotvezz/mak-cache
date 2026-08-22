@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/dotvezz/caddy-cache/cache"
+	"github.com/dotvezz/mak-cache/cache"
 )
 
 type Storable interface {

@@ -1,6 +1,8 @@
-package cache
+package caddy
 
 import (
+	"log/slog"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -8,14 +10,13 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/dotvezz/caddy-cache/cache"
-	"github.com/dotvezz/caddy-cache/config"
-	"github.com/dotvezz/caddy-cache/minitime"
-	"github.com/dotvezz/caddy-cache/storage"
-	"github.com/dotvezz/caddy-cache/storage/otter"
-	"github.com/dotvezz/caddy-cache/storage/valkey"
+	
 	"github.com/dustin/go-humanize"
-	"golang.org/x/sync/singleflight"
+
+	mak "github.com/dotvezz/mak-cache"
+	"github.com/dotvezz/mak-cache/config"
+	"github.com/dotvezz/mak-cache/minitime"
+	"github.com/dotvezz/mak-cache/storage"
 )
 
 var (
@@ -50,6 +51,22 @@ func init() {
 	httpcaddyfile.RegisterDirectiveOrder(moduleName, httpcaddyfile.Before, "rewrite")
 }
 
+type Handler struct {
+	Logger    *slog.Logger
+	Config    config.Config
+	ConfigKey string
+
+	middleware func(http.Handler) http.Handler
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) (err error) {
+	httpNext := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = next.ServeHTTP(w, r)
+	})
+	h.middleware(httpNext).ServeHTTP(w, r)
+	return
+}
+
 func (h Handler) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
 		ID:  "http.handlers.cache",
@@ -57,68 +74,9 @@ func (h Handler) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-func addStorage[T storage.Storable](p *storage.Provider[T], store storage.Provider[T]) {
-	if *p == nil {
-		*p = store
-	} else {
-		*p = storage.Wrap(*p, store)
-	}
-}
-
-func (h *Handler) Provision(context caddy.Context) (err error) {
-	if p, ok := storage.SharedStorageProviders[h.ConfigKey]; ok && p != nil {
-		// Try to see if there's a registered shared provider for the current config key. This would be if
-		// the config is defined in the global/server block of a Caddy file
-		h.entryStorage = p
-	} else {
-		for _, cfg := range h.Config.Storage {
-			var store storage.Provider[*cache.Entry]
-			switch {
-			case cfg.Otter != nil:
-				store, err = otter.NewProvider[*cache.Entry](*cfg.Otter)
-			case cfg.Valkey != nil:
-				store, err = valkey.NewProvider[cache.Entry, *cache.Entry](*cfg.Valkey)
-			}
-			if err != nil {
-				return err
-			}
-			addStorage(&h.entryStorage, store)
-		}
-
-		if _, ok = storage.SharedStorageProviders[h.ConfigKey]; ok {
-			storage.SharedStorageProviders[h.ConfigKey] = h.entryStorage
-		}
-	}
-
-	if p, ok := storage.SharedMetadataProviders[h.ConfigKey]; ok && p != nil {
-		// Try to see if there's a registered shared provider for the current config key. This would be if
-		// the config is defined in the global/server block of a Caddy file
-		h.metadataStorage = p
-	} else {
-		for _, cfg := range h.Config.MetadataStorage {
-			var store storage.Provider[*cache.Metadata]
-			switch {
-			case cfg.Otter != nil:
-				store, err = otter.NewProvider[*cache.Metadata](*cfg.Otter)
-			case cfg.Valkey != nil:
-				store, err = valkey.NewProvider[cache.Metadata, *cache.Metadata](*cfg.Valkey)
-			}
-			if err != nil {
-				return err
-			}
-			addStorage(&h.metadataStorage, store)
-		}
-
-		if _, ok = storage.SharedMetadataProviders[h.ConfigKey]; ok {
-			storage.SharedMetadataProviders[h.ConfigKey] = h.metadataStorage
-		}
-	}
-
-	h.singleflight = new(singleflight.Group)
-	h.now = time.Now
-	h.Logger = context.Slogger()
-
-	return nil
+func (h *Handler) Provision(_ caddy.Context) (err error) {
+	h.middleware, err = mak.New()
+	return
 }
 
 func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
@@ -142,6 +100,7 @@ func registerGlobalOption(d *caddyfile.Dispenser, existing any) (any, error) {
 		configMap map[string]config.Config
 		ok        bool
 	)
+
 	if configMap, ok = existing.(map[string]config.Config); !ok {
 		return nil, d.Errf("invalid configMap type")
 	}

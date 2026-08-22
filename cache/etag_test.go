@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/dotvezz/caddy-cache/config"
+	"github.com/dotvezz/mak-cache/config"
 )
 
 func TestGenerateEtag(t *testing.T) {

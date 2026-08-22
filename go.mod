@@ -1,4 +1,4 @@
-module github.com/dotvezz/caddy-cache
+module github.com/dotvezz/mak-cache
 
 go 1.25.1
 

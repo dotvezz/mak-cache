@@ -8,8 +8,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dotvezz/caddy-cache/config"
-	"github.com/dotvezz/caddy-cache/headers"
+	"github.com/dotvezz/mak-cache/config"
+	"github.com/dotvezz/mak-cache/headers"
 )
 
 func GenerateKey(r *http.Request, cfg config.CacheKeyConfig, vary []string) string {
