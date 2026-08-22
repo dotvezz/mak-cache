@@ -68,9 +68,7 @@ api.example.com {
       ttl 1m
     }
     
-    storage in-memory {
-      memory_limit 134217728 # 128MB
-    }
+    storage in-memory 128MB
   }
   
   reverse_proxy http://internal-api-host
@@ -89,9 +87,7 @@ The example below shares one 128MB cache across `api.example.com` and `assets.ex
       ttl 1m
     }
 
-    storage in-memory {
-      memory_limit 134217728 # 128MB
-    }
+    storage in-memory 128MB
   }
 }
 
@@ -109,7 +105,7 @@ assets.example.com {
 ### Multiple Caches across Multiple Sites/Routes
 
 The above example may not perform well in practice; If the asset hostname `assets.example.com` has a large number of
-large, high frequency resources, it will lead to high eviction and low cache hit rates for the api hostname
+large, high-frequency resources, it will lead to high eviction and low cache hit rates for the api hostname
 `api.example.com`.
 
 This can be addressed by separating their cache storage so one can't evict the other's responses, But it may still be
@@ -123,12 +119,10 @@ cache TTL set to 750 hours, and is shared by two asset hostnames `assets1.exampl
 {
   cache assets {
     timing {
-      ttl 750h # Assuming an asset cache is for static web assets, the cache can live for a long time by default
+      ttl 750h # For static web assets, cache entries can live for a long time by default
     }
 
-    storage in-memory {
-      memory_limit 134217728 # 128MB
-    }
+    storage in-memory 256MB
   }
 
   cache api {
@@ -136,9 +130,7 @@ cache TTL set to 750 hours, and is shared by two asset hostnames `assets1.exampl
       ttl 5m
     }
 
-    storage in-memory {
-      memory_limit 134217728 # 128MB
-    }
+    storage in-memory 128MB
   }
 }
 
