@@ -5,9 +5,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/dotvezz/caddy-cache/cache"
-	"github.com/dotvezz/caddy-cache/config"
-	"github.com/dotvezz/caddy-cache/storage"
+	"github.com/dotvezz/mak-cache/cache"
+	"github.com/dotvezz/mak-cache/config"
+	"github.com/dotvezz/mak-cache/storage"
 )
 
 func TestNewProvider(t *testing.T) {

@@ -38,7 +38,7 @@ As with other Caddy v2 plugins, the way to install this module is by building Ca
 ```shell
 
 go run github.com/caddyserver/xcaddy/cmd/xcaddy \
-  --with github.com/dotvezz/caddy-cache
+  --with github.com/dotvezz/mak-cache
 
 ```
 
@@ -48,7 +48,7 @@ go run github.com/caddyserver/xcaddy/cmd/xcaddy \
 FROM docker.io/caddy:builder-alpine AS build
 
 RUN xcaddy build \
-    --with github.com/dotvezz/caddy-cache
+    --with github.com/dotvezz/mak-cache
 
 FROM docker.io/caddy:alpine as run
 

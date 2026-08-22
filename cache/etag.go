@@ -7,7 +7,7 @@ import (
 	"hash/crc32"
 	"strconv"
 
-	"github.com/dotvezz/caddy-cache/config"
+	"github.com/dotvezz/mak-cache/config"
 )
 
 func GenerateEtag(e *Entry, cfg config.ETagConfig) string {

@@ -7,7 +7,7 @@
 package config
 
 import (
-	"github.com/dotvezz/caddy-cache/minitime"
+	"github.com/dotvezz/mak-cache/minitime"
 )
 
 // ETagConfig holds the configuration for handling ETags. If enabled, ETags from origin will be respected and missing
@@ -134,8 +134,8 @@ type Config struct {
 	// StatusTimings allows negative caching for the given HTTP status codes, even if they are not typically cacheable
 	StatusTimings map[int]TimingConfig `json:"status_timings,omitempty"`
 
-	// Storage allows for configuring the cache value storage. At least one Storage must be configured.
-	// Multiple Storage configurations can be tied together for a layered setup, for example a low-latency in-memory
+	// Storage allows for configuring the cache entry storage. At least one Storage must be configured.
+	// Multiple Storage configurations can be tied together for a layered setup, for example, a low-latency in-memory
 	// layer backed by a redis layer for serving lower-frequency cached values, or as a lazy mechanism for consistency
 	// across multiple proxy nodes.
 	Storage []StorageConfig `json:"storage"`

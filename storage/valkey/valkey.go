@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dotvezz/caddy-cache/config"
-	"github.com/dotvezz/caddy-cache/storage"
+	"github.com/dotvezz/mak-cache/config"
+	"github.com/dotvezz/mak-cache/storage"
 
 	vkey "github.com/valkey-io/valkey-go"
 )

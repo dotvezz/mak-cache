@@ -12,10 +12,10 @@ func ptr[T any](v T) *T {
 
 func TestCacheControl_FromDirectives(t *testing.T) {
 	tests := []struct {
-		name     string
-		ds       []string
-		want     CacheControl
-		wantErr  bool
+		name    string
+		ds      []string
+		want    CacheControl
+		wantErr bool
 	}{
 		{
 			name: "max-age",
@@ -55,7 +55,7 @@ func TestCacheControl_FromDirectives(t *testing.T) {
 		{
 			name: "public",
 			ds:   []string{"public"},
-			want: CacheControl{Private: false},
+			want: CacheControl{Public: true},
 		},
 		{
 			name: "combined",
@@ -64,7 +64,7 @@ func TestCacheControl_FromDirectives(t *testing.T) {
 				MaxAge:               ptr(3600 * time.Second),
 				StaleWhileRevalidate: ptr(600 * time.Second),
 				MustRevalidate:       true,
-				Private:              false,
+				Public:               true,
 			},
 		},
 		{
@@ -102,12 +102,12 @@ func TestCacheControl_Directives(t *testing.T) {
 		{
 			name: "max-age",
 			cc:   CacheControl{MaxAge: ptr(60 * time.Second)},
-			want: []string{"public", "max-age=60"},
+			want: []string{"max-age=60"},
 		},
 		{
 			name: "stale-while-revalidate",
 			cc:   CacheControl{StaleWhileRevalidate: ptr(30 * time.Second)},
-			want: []string{"public", "stale-while-revalidate=30"},
+			want: []string{"stale-while-revalidate=30"},
 		},
 		{
 			name: "private",
@@ -122,7 +122,7 @@ func TestCacheControl_Directives(t *testing.T) {
 				MustRevalidate:       true,
 				NoCache:              true,
 			},
-			want: []string{"no-cache", "public", "max-age=3600", "stale-while-revalidate=600", "must-revalidate"},
+			want: []string{"no-cache", "max-age=3600", "stale-while-revalidate=600", "must-revalidate"},
 		},
 	}
 	for _, tt := range tests {
