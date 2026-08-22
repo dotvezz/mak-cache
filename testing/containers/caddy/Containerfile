@@ -3,7 +3,9 @@ FROM docker.io/caddy:2.11.4-builder-alpine AS builder
 COPY ./ /opt/caddy-cache
 
 RUN xcaddy build \
-    --with github.com/dotvezz/caddy-cache=/opt/caddy-cache
+    --with github.com/dotvezz/mak-cache/plugins/caddy=/opt/caddy-cache/plugins/caddy \
+    --with github.com/dotvezz/mak-cache=/opt/caddy-cache
+
 
 FROM docker.io/caddy:2.11.4-alpine AS run
 

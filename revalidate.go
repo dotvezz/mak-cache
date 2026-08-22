@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
-	"github.com/dotvezz/caddy-cache/cache"
-	"github.com/dotvezz/caddy-cache/headers"
+	"github.com/dotvezz/mak-cache/cache"
+	"github.com/dotvezz/mak-cache/headers"
 )
 
-func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, meta *cache.Metadata, entry *cache.Entry, cacheStatus *headers.CacheStatus, requestTime time.Time, next caddyhttp.Handler) (err error) {
+func (m *Middleware) revalidate(w http.ResponseWriter, r *http.Request, meta *cache.Metadata, entry *cache.Entry, cacheStatus *headers.CacheStatus, requestTime time.Time, next http.Handler) (err error) {
 	// We're holding on to a clone of the original request because we may need to reuse it, for example if the origin
 	// response has a Vary header.
 	// Because we're living in a Caddy handler, and upstream handlers may mutate the request, the original value of r
@@ -20,34 +20,31 @@ func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, meta *cache
 
 	var notModified any
 
-	notModified, err, cacheStatus.Collapsed = h.singleflight.Do("revalidate."+cacheStatus.Key, func() (any, error) {
+	notModified, err, cacheStatus.Collapsed = m.singleflight.Do("revalidate."+cacheStatus.Key, func() (any, error) {
 		ifNoneMatch := headers.IfNoneMatch{}
 		ifNoneMatch.FromHeaders(r.Header["If-None-Match"])
 
 		buf := bytes.NewBuffer(make([]byte, 0, 1024))
-		rec := caddyhttp.NewResponseRecorder(w, buf, h.shouldBuffer)
+		rec := caddyhttp.NewResponseRecorder(w, buf, m.shouldBuffer)
 
-		err = next.ServeHTTP(rec, r)
-		if err != nil {
-			return false, err
-		}
+		next.ServeHTTP(rec, r)
 
 		cacheStatus.FwdStatus = rec.Status()
 
 		if !rec.Buffered() {
 			if rec.Status() == http.StatusNotModified {
-				cacheable := h.processResponseHeaders(r.Header, rClone.Header, meta, rec.Status())
+				cacheable := m.processResponseHeaders(r.Header, rClone.Header, meta, rec.Status())
 				if !cacheable {
 					return false, nil
 				}
 
 				meta.Date = requestTime
-				err = h.updateMetadata(r.Context(), cache.GenerateKey(rClone, h.Config.Key, nil), meta)
+				err = m.updateMetadata(r.Context(), cache.GenerateKey(rClone, m.Config.Key, nil), meta)
 
 				entry.Date = requestTime
-				entry.Expires = requestTime.Add(time.Duration(h.Timing.TTL))
+				entry.Expires = requestTime.Add(time.Duration(m.Timing.TTL))
 				entry.Metadata = *meta
-				err = h.updateEntry(r.Context(), cacheStatus.Key, entry)
+				err = m.updateEntry(r.Context(), cacheStatus.Key, entry)
 				return true, err
 			}
 
@@ -64,20 +61,20 @@ func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, meta *cache
 		}
 
 		meta.Date = requestTime
-		cacheable := h.processResponseHeaders(r.Header, rClone.Header, meta, rec.Status())
+		cacheable := m.processResponseHeaders(r.Header, rClone.Header, meta, rec.Status())
 
 		entry.Metadata = *meta
 		if cacheable && err == nil {
-			if !h.ETag.Disable {
-				h.setEtag(w, entry)
+			if !m.ETag.Disable {
+				m.setEtag(w, entry)
 			}
 
-			keyWithVary := cache.GenerateKey(rClone, h.Key, meta.Vary)
-			err = h.updateEntry(r.Context(), keyWithVary, entry)
+			keyWithVary := cache.GenerateKey(rClone, m.Key, meta.Vary)
+			err = m.updateEntry(r.Context(), keyWithVary, entry)
 			cacheStatus.Stored = err == nil
 		}
 
-		err = h.setMetadata(r.Context(), cacheStatus.Key, meta)
+		err = m.setMetadata(r.Context(), cacheStatus.Key, meta)
 
 		return false, nil
 	})
@@ -91,5 +88,5 @@ func (h *Handler) revalidate(w http.ResponseWriter, r *http.Request, meta *cache
 		return nil
 	}
 
-	return h.replyWithEntry(w, cacheStatus, requestTime, entry)
+	return m.replyWithEntry(w, cacheStatus, requestTime, entry)
 }

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dotvezz/caddy-cache/config"
-	"github.com/dotvezz/caddy-cache/storage"
+	"github.com/dotvezz/mak-cache/config"
+	"github.com/dotvezz/mak-cache/storage"
 	"github.com/maypok86/otter/v2"
 )
 

@@ -1,4 +1,4 @@
-package cache
+package caddy
 
 import (
 	"reflect"
@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
-	"github.com/dotvezz/caddy-cache/config"
-	"github.com/dotvezz/caddy-cache/minitime"
+	"github.com/dotvezz/mak-cache/config"
+	"github.com/dotvezz/mak-cache/minitime"
 )
 
 func TestParseFromCustomHelper(t *testing.T) {
