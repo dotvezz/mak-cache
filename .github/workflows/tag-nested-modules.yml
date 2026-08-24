@@ -1,0 +1,34 @@
+name: Tag Nested Modules
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  tag-nested-modules:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create plugins/caddy tag
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          NESTED_TAG="plugins/caddy/${TAG_NAME}"
+          
+          echo "Triggered by tag: ${TAG_NAME}"
+          
+          # Check if the nested tag already exists to avoid errors
+          if git rev-parse "refs/tags/${NESTED_TAG}" >/dev/null 2>&1; then
+            echo "Tag ${NESTED_TAG} already exists locally."
+          else
+            echo "Creating tag ${NESTED_TAG} pointing to ${GITHUB_SHA}"
+            git tag "${NESTED_TAG}" "${GITHUB_SHA}"
+            git push origin "${NESTED_TAG}"
+          fi
