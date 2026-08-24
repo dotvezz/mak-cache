@@ -15,7 +15,6 @@ import (
 
 	mak "github.com/dotvezz/mak-cache"
 	"github.com/dotvezz/mak-cache/config"
-	"github.com/dotvezz/mak-cache/minitime"
 	"github.com/dotvezz/mak-cache/storage"
 )
 
@@ -338,7 +337,7 @@ func parseBoolArg(h caddyfileHelper) (bool, error) {
 	}
 }
 
-func parseDurationArg(h caddyfileHelper) (minitime.Duration, error) {
+func parseDurationArg(h caddyfileHelper) (time.Duration, error) {
 	args := h.RemainingArgs()
 	if len(args) != 1 {
 		return 0, h.Errf("expected exactly one duration value, got %v", args)
@@ -347,7 +346,7 @@ func parseDurationArg(h caddyfileHelper) (minitime.Duration, error) {
 	if err != nil {
 		return 0, h.Errf("invalid duration value %q: %v", args[0], err)
 	}
-	return minitime.Duration(d), nil
+	return d, nil
 }
 
 func parseTimingConfig(h caddyfileHelper, t *config.TimingConfig) (err error) {

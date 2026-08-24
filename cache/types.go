@@ -22,28 +22,38 @@ type Entry struct {
 }
 
 func (e *Entry) RefreshHeapSize() {
+	e.Metadata.RefreshHeapSize()
 
-}
-
-func (e *Entry) HeapSize() int {
-	total := entryBaseHeapSize
-
-	// embedded metadata size
-	total += e.Metadata.HeapSize()
-
-	// body size
+	total := entryBaseHeapSize + (e.Metadata.HeapSize() - metaBaseHeapSize)
 	total += sizeClass(cap(e.Body))
 
-	// headers
 	if e.Headers != nil {
-		// backing array
 		total += cap(e.Headers) * int(unsafe.Sizeof([2]string{}))
 
 		for i := range e.Headers {
 			total += sizeClass(len(e.Headers[i][0]))
 			total += sizeClass(len(e.Headers[i][1]))
 		}
+	}
 
+	e.heapSize.Store(int64(total))
+}
+
+func (e *Entry) HeapSize() int {
+	if size := e.heapSize.Load(); size > 0 {
+		return int(size)
+	}
+
+	total := entryBaseHeapSize + (e.Metadata.HeapSize() - metaBaseHeapSize)
+	total += sizeClass(cap(e.Body))
+
+	if e.Headers != nil {
+		total += cap(e.Headers) * int(unsafe.Sizeof([2]string{}))
+
+		for i := range e.Headers {
+			total += sizeClass(len(e.Headers[i][0]))
+			total += sizeClass(len(e.Headers[i][1]))
+		}
 	}
 
 	return total
