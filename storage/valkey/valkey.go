@@ -13,6 +13,7 @@ import (
 )
 
 var now = time.Now
+var newClient = vkey.NewClient
 
 type Provider[C any, T interface {
 	*C
@@ -72,7 +73,7 @@ func NewProvider[C any, T interface {
 	*C
 	storage.Storable
 }](cfg config.ValkeyConfig) (*Provider[C, T], error) {
-	client, err := vkey.NewClient(vkey.ClientOption{
+	client, err := newClient(vkey.ClientOption{
 		InitAddress: []string{cfg.Address},
 	})
 

@@ -198,6 +198,78 @@ func TestMetadata_MarshalUnmarshal(t *testing.T) {
 	}
 }
 
+func TestUnmarshal_ErrorPaths(t *testing.T) {
+	t.Run("Entry invalid signature", func(t *testing.T) {
+		r := bytes.NewReader([]byte("bad_signature"))
+		var e Entry
+		err := e.Unmarshal(r)
+		if err == nil {
+			t.Error("expected error for invalid signature, got nil")
+		}
+	})
+
+	t.Run("Entry invalid version", func(t *testing.T) {
+		buf := bytes.NewBuffer(nil)
+		buf.Write(entrySignature[:])
+		buf.WriteByte(99) // unsupported version 99
+		var e Entry
+		err := e.Unmarshal(buf)
+		if err == nil {
+			t.Error("expected error for invalid version, got nil")
+		}
+	})
+
+	t.Run("Metadata invalid signature", func(t *testing.T) {
+		r := bytes.NewReader([]byte("bad_signature"))
+		var m Metadata
+		err := m.Unmarshal(r)
+		if err == nil {
+			t.Error("expected error for invalid signature, got nil")
+		}
+	})
+
+	t.Run("Metadata invalid version", func(t *testing.T) {
+		buf := bytes.NewBuffer(nil)
+		buf.Write(metadataSignature[:])
+		buf.WriteByte(99) // unsupported version 99
+		var m Metadata
+		err := m.Unmarshal(buf)
+		if err == nil {
+			t.Error("expected error for invalid version, got nil")
+		}
+	})
+
+	t.Run("Truncated Entry header unmarshaling", func(t *testing.T) {
+		buf := bytes.NewBuffer(nil)
+		_ = basicEntry.MarshalTo(buf)
+		fullBytes := buf.Bytes()
+
+		for i := 1; i <= 20; i++ {
+			var e Entry
+			r := bytes.NewReader(fullBytes[:i])
+			err := e.Unmarshal(r)
+			if err == nil {
+				t.Errorf("expected error when unmarshaling truncated header slice of length %d", i)
+			}
+		}
+	})
+
+	t.Run("Truncated Metadata unmarshaling", func(t *testing.T) {
+		buf := bytes.NewBuffer(nil)
+		_ = basicEntry.Metadata.MarshalTo(buf)
+		fullBytes := buf.Bytes()
+
+		for i := 1; i < len(fullBytes); i++ {
+			var m Metadata
+			r := bytes.NewReader(fullBytes[:i])
+			err := m.Unmarshal(r)
+			if err == nil {
+				t.Errorf("expected error when unmarshaling truncated metadata slice of length %d/%d", i, len(fullBytes))
+			}
+		}
+	})
+}
+
 func Benchmark_SmallEntry_Marshal(b *testing.B) {
 	buf := bytes.NewBuffer(make([]byte, 0, 1024))
 	for b.Loop() {

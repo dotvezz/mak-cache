@@ -20,16 +20,7 @@ import (
 )
 
 var (
-	defaultKey    = " default " // Spaces to make it hard to parse an accidentally colliding key from Caddyfile
-	defaultConfig = config.Config{
-		Storage: []config.StorageConfig{
-			{
-				Otter: &config.OtterConfig{
-					MemoryLimit: 1024 * 1024 * 1024, // 1GB
-				},
-			},
-		},
-	}
+	defaultKey     = " default " // Spaces to make it hard to parse an accidentally colliding key from Caddyfile
 	errNotBuffered = errors.New("not buffered")
 	now            = time.Now
 )
@@ -70,10 +61,11 @@ func WithConfigKey(key string) func(o *options) {
 	}
 }
 
+// New creates a new middleware instance with the provided options.
 func New(optFuncs ...func(o *options)) (middleware func(next http.Handler) http.Handler, err error) {
 	o := options{
 		configKey: defaultKey,
-		config:    defaultConfig,
+		config:    config.Config{},
 		logger:    slog.Default(),
 	}
 	for _, f := range optFuncs {
@@ -216,14 +208,15 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http
 		// Found metadata, but forwarded because of an unsafe method, so we need to invalidate
 		// RFC 9211 Sec 4.4
 		m.handleAndInvalidate(w, r, cacheStatus, next)
+		return
 	} else if !found {
 		// Miss
 		cacheStatus.FwdURIMiss = true
 		err := m.forward(w, r, cacheStatus, requestTime, next)
 		if err != nil {
 			m.Error("ServeHTTP", slog.String("error", err.Error()))
-			return
 		}
+		return
 	}
 
 	respCC := headers.CacheControl{}

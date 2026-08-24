@@ -7,7 +7,6 @@ import (
 
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/dotvezz/mak-cache/config"
-	"github.com/dotvezz/mak-cache/minitime"
 )
 
 func TestParseFromCustomHelper(t *testing.T) {
@@ -68,9 +67,9 @@ func TestParseFromCustomHelper(t *testing.T) {
 
 	// Verify Timing
 	expectedTiming := config.TimingConfig{
-		TTL:      minitime.Duration(10 * time.Second),
-		MaxStale: minitime.Duration(5 * time.Minute),
-		TTLSplay: minitime.Duration(1 * time.Second),
+		TTL:      10 * time.Second,
+		MaxStale: 5 * time.Minute,
+		TTLSplay: 1 * time.Second,
 	}
 	if !reflect.DeepEqual(cfg.Timing, expectedTiming) {
 		t.Errorf("expected Timing %+v, got %+v", expectedTiming, cfg.Timing)
@@ -81,8 +80,8 @@ func TestParseFromCustomHelper(t *testing.T) {
 		t.Errorf("expected 2 status timings, got %d", len(cfg.StatusTimings))
 	}
 	expectedStatusTiming := config.TimingConfig{
-		TTL:      minitime.Duration(1 * time.Minute),
-		MaxStale: minitime.Duration(10 * time.Second),
+		TTL:      1 * time.Minute,
+		MaxStale: 10 * time.Second,
 	}
 	for _, code := range []int{404, 500} {
 		if got, ok := cfg.StatusTimings[code]; !ok {
@@ -141,7 +140,7 @@ func TestParseFromCustomHelper(t *testing.T) {
 	// Verify Refresh
 	expectedRefresh := config.RefreshConfig{
 		Disable: true,
-		Timeout: minitime.Duration(500 * time.Millisecond),
+		Timeout: 500 * time.Millisecond,
 	}
 	if !reflect.DeepEqual(cfg.Refresh, expectedRefresh) {
 		t.Errorf("expected Refresh %+v, got %+v", expectedRefresh, cfg.Refresh)
