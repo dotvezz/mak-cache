@@ -1,5 +1,5 @@
 // Package config provides configuration options for the cache middleware.
-// For contributors considering adding functionality to caddy-cache, consider these two things:
+// For contributors considering adding functionality to mak-cache, consider these two things:
 //  1. The Go Proverb, "Make the zero value useful"
 //  2. The Principle of Least Surprise
 //

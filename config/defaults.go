@@ -3,7 +3,7 @@ package config
 import "time"
 
 /*
-	As stated in the package comment, the philosophy for configuring caddy-cache aligns with two things:
+	As stated in the package comment, the philosophy for configuring mak-cache aligns with two things:
 		1. The Go Proverb, "Make the zero value useful"
 		2. The Principle of Least Surprise
 	That means that we strive to define configuration types in such a way that the zero value should be the most

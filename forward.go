@@ -33,8 +33,9 @@ func (m *Middleware) fwdUpstream(w http.ResponseWriter, r *http.Request, next ht
 }
 
 func (m *Middleware) backgroundRefresh(req *http.Request, meta *cache.Metadata, entry *cache.Entry, cacheStatus *headers.CacheStatus, requestTime time.Time, next http.Handler) {
-	// After it finishes writing downstream, caddy runs a deferred timeout cancel.
-	// Since we're running this in the background, that cancel would be a problem so we'll just ignore it here.
+	// After a request has been handled, it's likely that its context is canceled outside of our control. For example,
+	// if a parent/outer handler in the middleware stack has a deferred timeout cancel.
+	// Since we're running this in the background, that cancel would be a problem, so we'll just ignore it here.
 	newCtx := context.WithoutCancel(req.Context())
 	req = req.WithContext(newCtx)
 
@@ -135,7 +136,7 @@ func (m *Middleware) forward(w http.ResponseWriter, r *http.Request, cacheStatus
 
 	// We're holding on to a clone of the request because we may need to reuse it, for example if the origin
 	// response has a Vary header and we need to regenerate a key.
-	// Because we're living in a Caddy handler, and upstream handlers may mutate the request, the original value of r
+	// Because we're living in a middleware, and upstream handlers may mutate the request, the original value of r
 	// is not safe for reuse.
 	rClone := r.Clone(r.Context())
 
@@ -144,6 +145,8 @@ func (m *Middleware) forward(w http.ResponseWriter, r *http.Request, cacheStatus
 	var err error
 
 	e, err, cacheStatus.Collapsed = m.singleflight.Do(cacheStatus.Key, func() (any, error) {
+		newCtx := context.WithoutCancel(r.Context())
+		r = r.WithContext(newCtx)
 		return m.fwdUpstream(oneShot, r, next)
 	})
 
