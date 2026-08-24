@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/caddyserver/caddy/v2 v2.11.4
-	github.com/dotvezz/mak-cache v0.0.6
+	github.com/dotvezz/mak-cache v0.1.0
 	github.com/dustin/go-humanize v1.0.1
 )
 
