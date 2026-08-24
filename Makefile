@@ -13,12 +13,3 @@ debug: build
 test:
 	go test -v -cover ./...
 	(cd plugins/caddy && go test -v -cover ./...)
-
-up:
-	cd ./testing/containers && docker compose up -d
-
-down:
-	cd ./testing/containers && docker compose down
-
-build-containers:
-	cd ./testing/containers && docker compose build
