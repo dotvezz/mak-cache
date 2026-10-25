@@ -1,13 +1,21 @@
 -include .env
 export
 
-clean:
+clean\:caddy:
 	rm caddy
 
-build:
-	XCADDY_DEBUG=1 go tool xcaddy build --with $(shell awk '/^module/ {print $$2}' go.mod)=$(PWD)
+build\:caddy:
+	go tool xcaddy build \
+		--with github.com/dotvezz/mak-cache/plugins/caddy=$(PWD)/plugins/caddy \
+		--with github.com/dotvezz/mak-cache=$(PWD)
 
-debug: build
+run\:caddy: build\:caddy
+	./caddy run -c ./plugins/caddy/Caddyfile
+
+build\:caddy-debug:
+	XCADDY_DEBUG=1 make build
+
+run\:caddy-debug: build\:caddy-debug
 	go tool dlv --listen=:2345 --headless=true --api-version=2 --accept-multiclient exec ./caddy run
 
 test:
