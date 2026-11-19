@@ -41,7 +41,7 @@ func (m *Middleware) backgroundRefresh(req *http.Request, meta *cache.Metadata, 
 
 	go func() {
 		// Since we removed the cancel above, we want to ensure we have a timeout
-		ctx, cancel := context.WithTimeout(req.Context(), m.Refresh.ResolveTimeout())
+		ctx, cancel := context.WithTimeout(req.Context(), m.Refresh.ResolveRefreshTimeout())
 		defer cancel()
 		req = req.WithContext(ctx)
 
@@ -131,6 +131,7 @@ func (m *Middleware) setEtag(resp http.ResponseWriter, entry *cache.Entry) {
 func (m *Middleware) forward(w http.ResponseWriter, r *http.Request, cacheStatus *headers.CacheStatus, requestTime time.Time, next http.Handler) error {
 	// Even if we're handling a conditional request, if we're forwarding then we want to attempt to cache the full
 	// response instead of just passing the possible 304 down.
+	// TODO: Make this configurable though
 	r.Header.Del("If-None-Match")
 	r.Header.Del("If-Modified-Since")
 
@@ -141,14 +142,55 @@ func (m *Middleware) forward(w http.ResponseWriter, r *http.Request, cacheStatus
 	rClone := r.Clone(r.Context())
 
 	oneShot := responses.NewOneShot(w)
-	var e any
-	var err error
 
-	e, err, cacheStatus.Collapsed = m.singleflight.Do(cacheStatus.Key, func() (any, error) {
-		newCtx := context.WithoutCancel(r.Context())
+	doCh := m.fwdSingleflight.DoChan(cacheStatus.Key, func() (any, error) {
+		newCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), m.Forward.ResolveForwardTimeout())
+		defer cancel()
 		r = r.WithContext(newCtx)
-		return m.fwdUpstream(oneShot, r, next)
+		entry, err := m.fwdUpstream(oneShot, r, next)
+		if err != nil {
+			return nil, err
+		}
+
+		md := &cache.Metadata{
+			Date:    requestTime,
+			Expires: requestTime.Add(m.Timing.TTL),
+		}
+
+		cacheable := m.processResponseHeaders(rClone.Header, oneShot.Header(), md, entry.Status)
+
+		entry.Metadata = *md
+		if cacheable {
+			if !m.ETag.Disable {
+				m.setEtag(oneShot, entry)
+			}
+
+			keyWithVary := cache.GenerateKey(rClone, m.Key, md.Vary)
+			md.Linked = append(md.Linked, keyWithVary)
+			err = m.setEntry(r.Context(), keyWithVary, entry)
+			cacheStatus.Stored = err == nil
+		}
+
+		// Set metadata regardless of entry storeability/cacheability
+		_ = m.setMetadata(r.Context(), cacheStatus.Key, md)
+
+		return entry, nil
 	})
+
+	var err error
+	var entry *cache.Entry
+
+	select {
+	case <-r.Context().Done():
+		w.WriteHeader(http.StatusGatewayTimeout)
+		return nil
+	case res := <-doCh:
+		err = res.Err
+		if res.Val != nil {
+			entry = res.Val.(*cache.Entry)
+		}
+		cacheStatus.Collapsed = res.Shared
+	}
 
 	if err != nil {
 		oneShot.Header().Set("Cache-Status", cacheStatus.String())
@@ -159,30 +201,6 @@ func (m *Middleware) forward(w http.ResponseWriter, r *http.Request, cacheStatus
 		}
 		return nil
 	}
-
-	entry := e.(*cache.Entry)
-
-	md := &cache.Metadata{
-		Date:    requestTime,
-		Expires: requestTime.Add(time.Duration(m.Timing.TTL)),
-	}
-
-	cacheable := m.processResponseHeaders(rClone.Header, oneShot.Header(), md, entry.Status)
-
-	entry.Metadata = *md
-	if cacheable {
-		if !m.ETag.Disable {
-			m.setEtag(oneShot, entry)
-		}
-
-		keyWithVary := cache.GenerateKey(rClone, m.Key, md.Vary)
-		md.Linked = append(md.Linked, keyWithVary)
-		err = m.setEntry(r.Context(), keyWithVary, entry)
-		cacheStatus.Stored = err == nil
-	}
-
-	// Set metadata regardless of entry storeability/cacheability
-	err = m.setMetadata(r.Context(), cacheStatus.Key, md)
 
 	oneShot.WriteHeader(entry.Status)
 
