@@ -10,7 +10,12 @@ import (
 	"github.com/dotvezz/mak-cache/storage"
 )
 
-func (m *Middleware) getMetadata(ctx context.Context, key string) (md *cache.Metadata, found bool) {
+type metadataResult struct {
+	metadata *cache.Metadata
+	found    bool
+}
+
+func (m *Middleware) getMetadata(ctx context.Context, key string) (r metadataResult) {
 	key = "m" + key
 	var err error
 	if m.metadataStorage == nil {
@@ -18,13 +23,13 @@ func (m *Middleware) getMetadata(ctx context.Context, key string) (md *cache.Met
 		var e *cache.Entry
 		e, err = m.entryStorage.Get(ctx, key)
 		if err == nil {
-			md = &e.Metadata
+			r.metadata = &e.Metadata
 		}
 	} else {
-		md, err = m.metadataStorage.Get(ctx, key)
+		r.metadata, err = m.metadataStorage.Get(ctx, key)
 	}
 
-	found = err == nil
+	r.found = err == nil
 	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		m.Error("getMetadata",
 			slog.String("key", key),
@@ -32,7 +37,7 @@ func (m *Middleware) getMetadata(ctx context.Context, key string) (md *cache.Met
 		)
 	}
 
-	return md, found
+	return r
 }
 
 func (m *Middleware) setMetadata(ctx context.Context, key string, meta *cache.Metadata) error {
@@ -69,10 +74,16 @@ func (m *Middleware) updateMetadata(ctx context.Context, key string, md *cache.M
 	return m.metadataStorage.Update(ctx, key, md)
 }
 
-func (m *Middleware) getEntry(ctx context.Context, key string) (e *cache.Entry, found bool) {
+type entryResult struct {
+	entry *cache.Entry
+	found bool
+}
+
+func (m *Middleware) getEntry(ctx context.Context, key string) (er entryResult) {
 	key = "e" + key
-	e, err := m.entryStorage.Get(ctx, key)
-	found = err == nil
+	var err error
+	er.entry, err = m.entryStorage.Get(ctx, key)
+	er.found = err == nil
 	if err != nil && !errors.Is(err, storage.ErrNotFound) {
 		m.Error("getEntry",
 			slog.String("key", key),
@@ -80,7 +91,7 @@ func (m *Middleware) getEntry(ctx context.Context, key string) (e *cache.Entry, 
 		)
 	}
 
-	return e, found
+	return er
 }
 
 func (m *Middleware) setEntry(ctx context.Context, key string, entry *cache.Entry) error {

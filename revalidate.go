@@ -2,6 +2,7 @@ package mak
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -20,12 +21,16 @@ func (m *Middleware) revalidate(w http.ResponseWriter, r *http.Request, meta *ca
 
 	var notModified any
 
-	notModified, err, cacheStatus.Collapsed = m.singleflight.Do("revalidate."+cacheStatus.Key, func() (any, error) {
+	doCh := m.revalSingleFlight.DoChan(cacheStatus.Key, func() (any, error) {
 		ifNoneMatch := headers.IfNoneMatch{}
 		ifNoneMatch.FromHeaders(r.Header["If-None-Match"])
 
 		buf := bytes.NewBuffer(make([]byte, 0, 1024))
 		rec := caddyhttp.NewResponseRecorder(w, buf, m.shouldBuffer)
+
+		ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
+		defer cancel()
+		r = r.WithContext(ctx)
 
 		next.ServeHTTP(rec, r)
 
@@ -78,6 +83,13 @@ func (m *Middleware) revalidate(w http.ResponseWriter, r *http.Request, meta *ca
 
 		return false, nil
 	})
+
+	select {
+	case <-r.Context().Done():
+		return
+	case res := <-doCh:
+		notModified, err, cacheStatus.Collapsed = res.Val, res.Err, res.Shared
+	}
 
 	if err != nil {
 		return err

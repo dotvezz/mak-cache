@@ -20,19 +20,20 @@ func (m *Middleware) handleAndInvalidate(w http.ResponseWriter, r *http.Request,
 		var e *cache.Entry
 		var found bool
 
-		e, found = m.getEntry(r.Context(), cacheStatus.Key)
+		er := m.getEntry(r.Context(), cacheStatus.Key)
+		e, found = er.entry, er.found
 		if found && e != nil {
 			e.NeedsRevalidation = true
 			_ = m.updateEntry(r.Context(), cacheStatus.Key, e)
 		}
 
-		var meta *cache.Metadata
-		if meta, found = m.getMetadata(r.Context(), cacheStatus.Key); found && meta != nil {
-			for i := range meta.Linked {
-				e, found = m.getEntry(r.Context(), meta.Linked[i])
+		if metaResult := m.getMetadata(r.Context(), cacheStatus.Key); found && metaResult.metadata != nil {
+			for i := range metaResult.metadata.Linked {
+				er = m.getEntry(r.Context(), metaResult.metadata.Linked[i])
+				e, found = er.entry, er.found
 				if found && e != nil {
 					e.NeedsRevalidation = true
-					_ = m.updateEntry(r.Context(), meta.Linked[i], e)
+					_ = m.updateEntry(r.Context(), metaResult.metadata.Linked[i], e)
 				}
 			}
 		}

@@ -259,13 +259,13 @@ func TestDefaultsResolvers(t *testing.T) {
 
 	t.Run("ResolveTimeout returns default if zero", func(t *testing.T) {
 		refreshCfg := RefreshConfig{}
-		got := refreshCfg.ResolveTimeout()
+		got := refreshCfg.ResolveRefreshTimeout()
 		if got != 30*time.Second {
 			t.Errorf("ResolveTimeout() = %v, want 30s", got)
 		}
 
 		customRefresh := RefreshConfig{Timeout: 10 * time.Minute}
-		gotCustom := customRefresh.ResolveTimeout()
+		gotCustom := customRefresh.ResolveRefreshTimeout()
 		if gotCustom != 10*time.Minute {
 			t.Errorf("ResolveTimeout() = %v, want 10m", gotCustom)
 		}
