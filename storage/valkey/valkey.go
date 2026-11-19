@@ -19,10 +19,14 @@ type Provider[C any, T interface {
 	*C
 	storage.Storable
 }] struct {
-	client vkey.Client
+	client  vkey.Client
+	timeout time.Duration
 }
 
 func (p Provider[C, T]) Get(ctx context.Context, key string) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, p.timeout)
+	defer cancel()
+
 	var value C
 	v := T(&value)
 	bs, err := p.client.Do(ctx, p.client.B().Get().Key(key).Build()).AsBytes()
@@ -43,6 +47,9 @@ func (p Provider[C, T]) Get(ctx context.Context, key string) (T, error) {
 }
 
 func (p Provider[C, T]) Set(ctx context.Context, key string, value T) error {
+	ctx, cancel := context.WithTimeout(ctx, p.timeout)
+	defer cancel()
+
 	bs := bytes.NewBuffer(make([]byte, 0, 1024))
 	err := value.MarshalTo(bs)
 	if err != nil {
@@ -78,6 +85,7 @@ func NewProvider[C any, T interface {
 	})
 
 	return &Provider[C, T]{
-		client: client,
+		client:  client,
+		timeout: cfg.Timeout,
 	}, err
 }

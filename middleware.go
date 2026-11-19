@@ -1,6 +1,7 @@
 package mak
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"math/rand/v2"
@@ -32,7 +33,10 @@ type Middleware struct {
 	metadataStorage storage.Provider[*cache.Metadata]
 	entryStorage    storage.Provider[*cache.Entry]
 
-	singleflight *singleflight.Group
+	fwdSingleflight   *singleflight.Group
+	revalSingleFlight *singleflight.Group
+	metadSingleflight *singleflight.Group
+	entrySingleflight *singleflight.Group
 }
 
 type options struct {
@@ -76,7 +80,10 @@ func New(optFuncs ...func(o *options)) (middleware func(next http.Handler) http.
 		Logger: o.logger,
 		Config: o.config,
 
-		singleflight: new(singleflight.Group),
+		fwdSingleflight:   new(singleflight.Group),
+		revalSingleFlight: new(singleflight.Group),
+		metadSingleflight: new(singleflight.Group),
+		entrySingleflight: new(singleflight.Group),
 	}
 
 	if p, ok := storage.SharedStorageProviders[o.configKey]; ok && p != nil {
@@ -161,7 +168,7 @@ func isStale(entry *cache.Entry, requestTime time.Time) bool {
 }
 
 func (m *Middleware) canBackgroundRefresh(respCC headers.CacheControl, entry *cache.Entry, requestTime time.Time) bool {
-	maxStale := time.Duration(m.Timing.MaxStale)
+	maxStale := m.Timing.MaxStale
 
 	if respCC.StaleWhileRevalidate != nil && !m.Headers.OverrideOriginCacheControl {
 		maxStale = *respCC.StaleWhileRevalidate
@@ -201,7 +208,19 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http
 	headers.CanonicalizeRequest(r.Header)
 	cacheStatus.Key = cache.GenerateKey(r, m.Key, nil)
 
-	meta, found := m.getMetadata(r.Context(), cacheStatus.Key)
+	doCh := m.metadSingleflight.DoChan(cacheStatus.Key, func() (any, error) {
+		return m.getMetadata(context.WithoutCancel(r.Context()), cacheStatus.Key), nil
+	})
+
+	var (
+		meta  *cache.Metadata
+		found bool
+	)
+	select {
+	case res := <-doCh:
+		mResult := res.Val.(metadataResult)
+		meta, found = mResult.metadata, mResult.found
+	}
 
 	if !requests.IsSafeMethod(r.Method) {
 		cacheStatus.FwdMethod = true
@@ -237,7 +256,18 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http
 	}
 
 	var entry *cache.Entry
-	entry, found = m.getEntry(r.Context(), cacheStatus.Key)
+
+	entryCh := m.entrySingleflight.DoChan(cacheStatus.Key, func() (any, error) {
+		return m.getEntry(context.WithoutCancel(r.Context()), cacheStatus.Key), nil
+	})
+
+	select {
+	case res := <-entryCh:
+		mResult := res.Val.(entryResult)
+		entry, found = mResult.entry, mResult.found
+		cacheStatus.Collapsed = res.Shared
+	}
+
 	if !found {
 		if len(meta.Vary) > 0 {
 			// Found metadata for the original request, but not an entry that matches the regenerated key with the Vary

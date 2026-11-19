@@ -69,7 +69,8 @@ type OtterConfig struct {
 }
 
 type ValkeyConfig struct {
-	Address string `json:"address" yaml:"address"`
+	Address string        `json:"address" yaml:"address"`
+	Timeout time.Duration `json:"timeout" yaml:"timeout"`
 }
 
 type TimingConfig struct {
@@ -245,6 +246,10 @@ type PrometheusConfig struct {
 	Prefix string `json:"prefix" yaml:"prefix"`
 }
 
+type ForwardConfig struct {
+	Timeout time.Duration `json:"ttl" yaml:"ttl"`
+}
+
 type HeadersConfig struct {
 	// IgnoreVary specifies a list of headers to ignore when generating the cache key.
 	// By default, no Vary headers are ignored.
@@ -279,6 +284,7 @@ type Config struct {
 	Refresh    RefreshConfig    `json:"refresh" yaml:"refresh"`
 	Prometheus PrometheusConfig `json:"prometheus" yaml:"prometheus"`
 	Headers    HeadersConfig    `json:"headers" yaml:"headers"`
+	Forward    ForwardConfig    `json:"forward" yaml:"forward"`
 
 	// StatusTimings allows negative caching for the given HTTP status codes, even if they are not typically cacheable
 	StatusTimings map[int]TimingConfig `json:"status_timings,omitempty" yaml:"status_timings,omitempty"`

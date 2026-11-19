@@ -16,6 +16,8 @@ var (
 	// defaultCacheKeyComponents is the default list of cache key components to include in the cache key.
 	defaultCacheKeyComponents = []string{"host", "path", "query"}
 	defaultRefreshTimeout     = time.Second * 30
+	defaultRequestTimeout     = time.Second * 30
+	defaultValkeyTimeout      = time.Millisecond * 50
 )
 
 // ResolveComponents returns the list of cache key components to include in the cache key.
@@ -28,11 +30,29 @@ func (c CacheKeyConfig) ResolveComponents() []string {
 	return c.Components
 }
 
-// ResolveTimeout returns the default background refresh timeout
-func (r *RefreshConfig) ResolveTimeout() time.Duration {
+// ResolveRefreshTimeout returns the default background refresh timeout
+func (r *RefreshConfig) ResolveRefreshTimeout() time.Duration {
 	if r.Timeout == 0 {
 		return defaultRefreshTimeout
 	}
 
-	return time.Duration(r.Timeout)
+	return r.Timeout
+}
+
+// ResolveForwardTimeout returns the default request timeout
+func (r *ForwardConfig) ResolveForwardTimeout() time.Duration {
+	if r.Timeout == 0 {
+		return defaultRequestTimeout
+	}
+
+	return r.Timeout
+}
+
+// ResolveStorageTimeout returns the default timeout for storage operations
+func (r ValkeyConfig) ResolveStorageTimeout() time.Duration {
+	if r.Timeout == 0 {
+		return defaultValkeyTimeout
+	}
+
+	return r.Timeout
 }
