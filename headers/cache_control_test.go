@@ -6,10 +6,6 @@ import (
 	"time"
 )
 
-func ptr[T any](v T) *T {
-	return &v
-}
-
 func TestCacheControl_FromDirectives(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -20,27 +16,32 @@ func TestCacheControl_FromDirectives(t *testing.T) {
 		{
 			name: "max-age",
 			ds:   []string{"max-age=60"},
-			want: CacheControl{MaxAge: ptr(60 * time.Second)},
+			want: CacheControl{MaxAge: new(60 * time.Second)},
 		},
 		{
 			name: "min-fresh",
 			ds:   []string{"min-fresh=15"},
-			want: CacheControl{MinFresh: ptr(15 * time.Second)},
+			want: CacheControl{MinFresh: new(15 * time.Second)},
 		},
 		{
 			name: "max-stale",
 			ds:   []string{"max-stale=120"},
-			want: CacheControl{MaxStale: ptr(120 * time.Second)},
+			want: CacheControl{MaxStale: new(120 * time.Second)},
 		},
 		{
 			name: "s-maxage",
 			ds:   []string{"s-maxage=180"},
-			want: CacheControl{SMaxAge: ptr(180 * time.Second)},
+			want: CacheControl{SMaxAge: new(180 * time.Second)},
 		},
 		{
 			name: "stale-while-revalidate",
 			ds:   []string{"stale-while-revalidate=30"},
-			want: CacheControl{StaleWhileRevalidate: ptr(30 * time.Second)},
+			want: CacheControl{StaleWhileRevalidate: new(30 * time.Second)},
+		},
+		{
+			name: "stale-if-error",
+			ds:   []string{"stale-if-error=60"},
+			want: CacheControl{StaleIfError: new(60 * time.Second)},
 		},
 		{
 			name: "must-revalidate",
@@ -76,8 +77,8 @@ func TestCacheControl_FromDirectives(t *testing.T) {
 			name: "combined",
 			ds:   []string{"public", "max-age=3600", "stale-while-revalidate=600", "must-revalidate"},
 			want: CacheControl{
-				MaxAge:               ptr(3600 * time.Second),
-				StaleWhileRevalidate: ptr(600 * time.Second),
+				MaxAge:               new(3600 * time.Second),
+				StaleWhileRevalidate: new(600 * time.Second),
 				MustRevalidate:       true,
 				Public:               true,
 			},
@@ -132,6 +133,16 @@ func TestCacheControl_FromDirectives(t *testing.T) {
 			ds:      []string{"stale-while-revalidate=xyz"},
 			wantErr: true,
 		},
+		{
+			name:    "invalid stale-if-error no value",
+			ds:      []string{"stale-if-error"},
+			wantErr: true,
+		},
+		{
+			name:    "invalid stale-if-error bad int",
+			ds:      []string{"stale-if-error=xyz"},
+			wantErr: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -156,8 +167,13 @@ func TestCacheControl_Directives(t *testing.T) {
 	}{
 		{
 			name: "max-age",
-			cc:   CacheControl{MaxAge: ptr(60 * time.Second)},
+			cc:   CacheControl{MaxAge: new(60 * time.Second)},
 			want: []string{"max-age=60"},
+		},
+		{
+			name: "stale-if-error",
+			cc:   CacheControl{StaleIfError: new(60 * time.Second)},
+			want: []string{"stale-if-error=60"},
 		},
 		{
 			name: "all directives",
@@ -166,11 +182,12 @@ func TestCacheControl_Directives(t *testing.T) {
 				NoStore:              true,
 				Private:              true,
 				Public:               true, // Private overrides public in Directives()
-				MaxAge:               ptr(3600 * time.Second),
-				MaxStale:             ptr(60 * time.Second),
-				MinFresh:             ptr(30 * time.Second),
-				SMaxAge:              ptr(1800 * time.Second),
-				StaleWhileRevalidate: ptr(300 * time.Second),
+				MaxAge:               new(3600 * time.Second),
+				MaxStale:             new(60 * time.Second),
+				MinFresh:             new(30 * time.Second),
+				SMaxAge:              new(1800 * time.Second),
+				StaleWhileRevalidate: new(300 * time.Second),
+				StaleIfError:         new(120 * time.Second),
 				MustRevalidate:       true,
 				ProxyRevalidate:      true,
 			},
@@ -182,6 +199,7 @@ func TestCacheControl_Directives(t *testing.T) {
 				"max-stale=60",
 				"min-fresh=30",
 				"s-maxage=1800",
+				"stale-if-error=120",
 				"stale-while-revalidate=300",
 				"must-revalidate",
 				"proxy-revalidate",
@@ -200,11 +218,12 @@ func TestCacheControl_Directives(t *testing.T) {
 
 func TestCacheControl_StringAndFromString(t *testing.T) {
 	cc := &CacheControl{
-		Public: true,
-		MaxAge: ptr(3600 * time.Second),
+		Public:       true,
+		MaxAge:       new(3600 * time.Second),
+		StaleIfError: new(120 * time.Second),
 	}
 	str := cc.String()
-	wantStr := "public, max-age=3600"
+	wantStr := "public, max-age=3600, stale-if-error=120"
 	if str != wantStr {
 		t.Errorf("String() = %q, want %q", str, wantStr)
 	}
@@ -214,7 +233,7 @@ func TestCacheControl_StringAndFromString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromString() error = %v", err)
 	}
-	if !parsed.Public || *parsed.MaxAge != 3600*time.Second {
+	if !parsed.Public || *parsed.MaxAge != 3600*time.Second || parsed.StaleIfError == nil || *parsed.StaleIfError != 120*time.Second {
 		t.Errorf("FromString() got %+v", parsed)
 	}
 }

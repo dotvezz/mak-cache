@@ -98,7 +98,7 @@ func (m *Middleware) processResponseHeaders(reqH, respH http.Header, md *cache.M
 	if respCC.MaxStale != nil {
 		md.Evict = md.Evict.Add(*respCC.MaxStale)
 	} else {
-		md.Evict = md.Evict.Add(time.Duration(m.Config.Timing.MaxStale))
+		md.Evict = md.Evict.Add(m.Config.Timing.MaxStale)
 	}
 
 	// Not cacheable if Vary contains "*"
@@ -109,9 +109,12 @@ func (m *Middleware) processResponseHeaders(reqH, respH http.Header, md *cache.M
 		return false
 	}
 
-	// From RFC 9110 15.1
-	heuristicallyCacheable := []int{200, 203, 204, 206, 300, 301, 308, 404, 405, 410, 414, 501}
-	return slices.Contains(heuristicallyCacheable, status)
+	switch status {
+	// From RFC 9110 15.1 - Heuristically Cacheable Statuses
+	case 200, 203, 204, 206, 300, 301, 308, 404, 405, 410, 414, 501:
+		return true
+	}
+	return false
 }
 
 func (m *Middleware) setEtag(resp http.ResponseWriter, entry *cache.Entry) {
@@ -128,10 +131,17 @@ func (m *Middleware) setEtag(resp http.ResponseWriter, entry *cache.Entry) {
 	}
 }
 
-func (m *Middleware) forward(w http.ResponseWriter, r *http.Request, cacheStatus *headers.CacheStatus, requestTime time.Time, next http.Handler) error {
+func (m *Middleware) forward(
+	w http.ResponseWriter,
+	r *http.Request,
+	cacheStatus *headers.CacheStatus,
+	reqCacheControl headers.CacheControl,
+	requestTime time.Time,
+	next http.Handler,
+	entry *cache.Entry,
+) error {
 	// Even if we're handling a conditional request, if we're forwarding then we want to attempt to cache the full
 	// response instead of just passing the possible 304 down.
-	// TODO: Make this configurable though
 	r.Header.Del("If-None-Match")
 	r.Header.Del("If-Modified-Since")
 
@@ -147,7 +157,7 @@ func (m *Middleware) forward(w http.ResponseWriter, r *http.Request, cacheStatus
 		newCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), m.Forward.ResolveForwardTimeout())
 		defer cancel()
 		r = r.WithContext(newCtx)
-		entry, err := m.fwdUpstream(oneShot, r, next)
+		innerEntry, err := m.fwdUpstream(oneShot, r, next)
 		if err != nil {
 			return nil, err
 		}
@@ -157,39 +167,54 @@ func (m *Middleware) forward(w http.ResponseWriter, r *http.Request, cacheStatus
 			Expires: requestTime.Add(m.Timing.TTL),
 		}
 
-		cacheable := m.processResponseHeaders(rClone.Header, oneShot.Header(), md, entry.Status)
+		cacheable := m.processResponseHeaders(rClone.Header, oneShot.Header(), md, innerEntry.Status)
 
-		entry.Metadata = *md
+		innerEntry.Metadata = *md
 		if cacheable {
 			if !m.ETag.Disable {
-				m.setEtag(oneShot, entry)
+				m.setEtag(oneShot, innerEntry)
 			}
 
 			keyWithVary := cache.GenerateKey(rClone, m.Key, md.Vary)
 			md.Linked = append(md.Linked, keyWithVary)
-			err = m.setEntry(r.Context(), keyWithVary, entry)
+			err = m.setEntry(r.Context(), keyWithVary, innerEntry)
 			cacheStatus.Stored = err == nil
 		}
 
 		// Set metadata regardless of entry storeability/cacheability
 		_ = m.setMetadata(r.Context(), cacheStatus.Key, md)
 
-		return entry, nil
+		return innerEntry, nil
 	})
 
 	var err error
-	var entry *cache.Entry
+	var respE *cache.Entry
 
 	select {
 	case <-r.Context().Done():
-		w.WriteHeader(http.StatusGatewayTimeout)
+		oneShot.WriteHeader(http.StatusGatewayTimeout)
 		return nil
 	case res := <-doCh:
 		err = res.Err
 		if res.Val != nil {
-			entry = res.Val.(*cache.Entry)
+			respE = res.Val.(*cache.Entry)
 		}
 		cacheStatus.Collapsed = res.Shared
+	}
+
+	if entry != nil && respE != nil && isStaleEligibleErrorStatus(respE.Status) {
+		respCC := headers.CacheControl{}
+		// We're not really concerned with the errors here.
+		_ = respCC.FromDirectives(entry.CacheControl)
+
+		// When we're getting an error from upstream, and it's eligible under stale-if-error directives,
+		// replace the new entry with the cached/stale one
+		switch {
+		case respCC.StaleIfError != nil && entry.Expires.Add(*respCC.StaleIfError).After(requestTime),
+			reqCacheControl.StaleIfError != nil && entry.Expires.Add(*reqCacheControl.StaleIfError).After(requestTime):
+			respE = entry
+			oneShot.Reset()
+		}
 	}
 
 	if err != nil {
@@ -202,10 +227,10 @@ func (m *Middleware) forward(w http.ResponseWriter, r *http.Request, cacheStatus
 		return nil
 	}
 
-	oneShot.WriteHeader(entry.Status)
+	oneShot.WriteHeader(respE.Status)
 
-	_, err = oneShot.Write(entry.Body)
-	cacheStatus.FwdStatus = entry.Status
+	_, err = oneShot.Write(respE.Body)
+	cacheStatus.FwdStatus = respE.Status
 	w.Header().Set("Cache-Status", cacheStatus.String())
 	if err != nil {
 		m.Error("forward",
@@ -216,4 +241,14 @@ func (m *Middleware) forward(w http.ResponseWriter, r *http.Request, cacheStatus
 
 	err = oneShot.Fire()
 	return err
+}
+
+func isStaleEligibleErrorStatus(status int) bool {
+	switch status {
+	// From RFC 5861 Section 4:
+	// "an error is any situation that would result in a 500, 502, 503, or 504 HTTP response status code"
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+	return false
 }

@@ -231,7 +231,7 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http
 	} else if !found {
 		// Miss
 		cacheStatus.FwdURIMiss = true
-		err := m.forward(w, r, cacheStatus, requestTime, next)
+		err := m.forward(w, r, cacheStatus, reqCC, requestTime, next, nil)
 		if err != nil {
 			m.Error("ServeHTTP", slog.String("error", err.Error()))
 		}
@@ -274,7 +274,7 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http
 			// headers, therefore FwdVaryMiss
 			cacheStatus.FwdVaryMiss = true
 		}
-		err = m.forward(w, r, cacheStatus, requestTime, next)
+		err = m.forward(w, r, cacheStatus, reqCC, requestTime, next, nil)
 		if err != nil {
 			m.Error("ServeHTTP", slog.String("error", err.Error()))
 		}
@@ -303,7 +303,7 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http
 			m.backgroundRefresh(r, meta, entry, cacheStatus, requestTime, next)
 		} else {
 			cacheStatus.FwdStale = true
-			err = m.forward(w, r, cacheStatus, requestTime, next)
+			err = m.forward(w, r, cacheStatus, reqCC, requestTime, next, entry)
 			if err != nil {
 				m.Error("ServeHTTP", slog.String("error", err.Error()))
 			}
@@ -347,12 +347,15 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http
 }
 
 func (m *Middleware) shouldBuffer(status int, headers http.Header) bool {
+	// We want to buffer all responses deemed cacheable
 	cacheable := m.processResponseHeaders(make(http.Header), headers, &cache.Metadata{}, status)
 	if cacheable {
 		return true
 	}
 
-	return status >= 200 && status < 300
+	// We also want to buffer uncacheable error responses, but only if the status is stale eligible, to facilitate that
+	// branch if enabled
+	return isStaleEligibleErrorStatus(status)
 }
 
 func (m *Middleware) notModified(w http.ResponseWriter, cacheStatus *headers.CacheStatus, requestTime time.Time, e *cache.Entry) error {
