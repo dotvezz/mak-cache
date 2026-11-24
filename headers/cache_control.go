@@ -13,6 +13,7 @@ type CacheControl struct {
 	MaxStale             *time.Duration
 	SMaxAge              *time.Duration
 	StaleWhileRevalidate *time.Duration
+	StaleIfError         *time.Duration
 	MustRevalidate       bool
 	ProxyRevalidate      bool
 	Private              bool
@@ -92,6 +93,15 @@ func (cc *CacheControl) FromDirectives(ds []string) (err error) {
 			if err != nil {
 				return fmt.Errorf("invalid stale-while-revalidate: %s, %v", d, err)
 			}
+		case "stale-if-error":
+			if !ok {
+				return fmt.Errorf("invalid stale-if-error: %s", d)
+			}
+			dur, err := secsToDuration(v)
+			cc.StaleIfError = &dur
+			if err != nil {
+				return fmt.Errorf("invalid stale-if-error: %s, %v", d, err)
+			}
 		case "must-revalidate":
 			cc.MustRevalidate = true
 		case "proxy-revalidate":
@@ -141,6 +151,10 @@ func (cc *CacheControl) Directives() (ds []string) {
 
 	if cc.SMaxAge != nil {
 		ds = append(ds, "s-maxage="+strconv.Itoa(int(cc.SMaxAge.Seconds())))
+	}
+
+	if cc.StaleIfError != nil {
+		ds = append(ds, "stale-if-error="+strconv.Itoa(int(cc.StaleIfError.Seconds())))
 	}
 
 	if cc.StaleWhileRevalidate != nil {

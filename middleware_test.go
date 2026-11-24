@@ -395,14 +395,14 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				},
 			},
 			{
-				name: "second request bypass",
+				name: "second request miss", // because the first response had vary=* and was uncacheable
 				req: http.Request{
 					Method: http.MethodGet,
 					URL:    must(url.Parse("/vary/star?t7=1")),
 				},
 				want: want{
 					status:             200,
-					cacheStatusNeeds:   []string{"fwd=bypass"},
+					cacheStatusNeeds:   []string{"fwd=uri-miss"},
 					originRequestCount: pointerTo(2),
 				},
 			},
@@ -1257,7 +1257,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 	}
 
 	for group, ts := range tests {
-		mockTime := time.Now()
+		mockTime := must(time.Parse(time.RFC3339, "2023-01-01T00:00:00Z"))
 		now = func() time.Time {
 			return mockTime
 		}
