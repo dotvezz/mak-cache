@@ -81,8 +81,10 @@ AI-assisted.
 - **Negative Caching (`StatusTimings`)**: **WIP**
     - Configurable custom TTL and stale tolerances for specific HTTP status codes (e.g., short-lived caching for
       `404 Not Found` or `500 Internal Server Error`).
-- **Metrics & Observability**: **WIP**
-    - Prometheus metrics support with configurable prefix.
+- **Metrics & Observability**:
+    - Prometheus metrics support with a configurable prefix, exporting middleware-level request/hit/stale/collapse/error
+      counters, TTFB and transfer duration histograms (with native histogram support), and per-tier storage metrics for
+      both Otter and Valkey/Redis.
 
 ---
 
@@ -184,10 +186,12 @@ import (
 
 	mak "github.com/dotvezz/mak-cache"
 	"github.com/dotvezz/mak-cache/config"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func setupCache() (func(http.Handler) http.Handler, error) {
 	return mak.New(
+		mak.WithPrometheusRegistrer(prometheus.DefaultRegisterer),
 		mak.WithConfig(config.Config{
 			// Default timing rules
 			Timing: config.TimingConfig{
@@ -215,7 +219,8 @@ func setupCache() (func(http.Handler) http.Handler, error) {
 				},
 				{
 					Valkey: &config.ValkeyConfig{
-						Address: "localhost:6379", // L2 Shared Valkey/Redis
+						Address: "localhost:6379",       // L2 Shared Valkey/Redis
+						Timeout: 50 * time.Millisecond,  // Operation timeout (default: 50ms)
 					},
 				},
 			},
@@ -261,7 +266,12 @@ func setupCache() (func(http.Handler) http.Handler, error) {
 				OverrideClientCacheControl: false, // Strictly respect client directives by default
 			},
 
-			// Prometheus metrics
+			// Upstream forward timeout
+			Forward: config.ForwardConfig{
+				Timeout: 30 * time.Second,
+			},
+
+			// Prometheus metrics (also requires mak.WithPrometheusRegistrer)
 			Prometheus: config.PrometheusConfig{
 				Prefix: "my_service_cache",
 			},
@@ -308,6 +318,26 @@ the [Caddy Plugin README](plugins/caddy/readme.md).
 
 ---
 
+## Prometheus Metrics
+
+Prometheus metrics are enabled when both `Prometheus.Prefix` is non-empty and a `prometheus.Registerer` is supplied via `mak.WithPrometheusRegistrer(reg)` (in the Caddy plugin, Caddy's metrics registry is wired up automatically).
+
+### Middleware Metrics
+- `<prefix>_requests` (Counter): Total requests handled by the cache middleware.
+- `<prefix>_hits` (Counter): Total cache hits.
+- `<prefix>_stale_count` (Counter): Total stale responses served.
+- `<prefix>_collapse_count` (Counter): Total requests coalesced via singleflight.
+- `<prefix>_error_count` (Counter): Total middleware request/response errors.
+- `<prefix>_ttfb_seconds` (Histogram): Time to first byte in seconds.
+- `<prefix>_transfer_seconds` (Histogram): Full response transfer time in seconds.
+
+### Storage Metrics
+Each configured storage provider also exports metrics scoped by storage role (`_entry` or `_metadata`):
+- **Otter (in-memory)**: `<prefix>_{entry,metadata}_otter_in_memory_{hits,gets,sets}` (Counters) and `..._{get,set}_seconds` (Histograms).
+- **Valkey / Redis**: `<prefix>_{entry,metadata}_redis_valkey_{hits,gets,sets,get_errors,set_errors}` (Counters) and `..._{get,set}_seconds` (Histograms).
+
+---
+
 ## Configuration Reference
 
 | Struct Field                         | Type                   | Default                     | Description                                                                                              |
@@ -317,6 +347,9 @@ the [Caddy Plugin README](plugins/caddy/readme.md).
 | `Timing.TTLSplay`                    | `time.Duration`        | `0`                         | Maximum random duration added to downstream TTL to prevent stampedes.                                    |
 | `StatusTimings`                      | `map[int]TimingConfig` | `nil`                       | Custom timing rules for specific HTTP status codes (e.g. 404, 500).                                      |
 | `Storage`                            | `[]StorageConfig`      | `nil`                       | One or more storage providers (`Otter` or `Valkey`). Multiple providers form a layered cache.            |
+| `Storage[].Otter.MemoryLimit`        | `uint64`               | `0`                         | Maximum memory limit in bytes for an Otter in-memory storage tier.                                       |
+| `Storage[].Valkey.Address`           | `string`               | `""`                        | Network address (`host:port`) for a Valkey/Redis storage tier.                                           |
+| `Storage[].Valkey.Timeout`           | `time.Duration`        | `50ms`                      | Per-operation timeout for Valkey/Redis `Get`/`Set` calls.                                                |
 | `MetadataStorage`                    | `[]StorageConfig`      | `nil`                       | Independent storage providers for metadata index lookups.                                                |
 | `Key.Components`                     | `[]string`             | `["host", "path", "query"]` | Components forming the cache key (`scheme`, `host`, `port`, `method`, `path`, `query`, `header.<Name>`). |
 | `Key.StripQueryParams`               | `[]string`             | `nil`                       | Query parameters to strip from the cache key.                                                            |
@@ -324,13 +357,14 @@ the [Caddy Plugin README](plugins/caddy/readme.md).
 | `Coalesce.Disable`                   | `bool`                 | `false`                     | Disables singleflight request collapsing.                                                                |
 | `Refresh.Disable`                    | `bool`                 | `false`                     | Disables asynchronous background revalidation.                                                           |
 | `Refresh.Timeout`                    | `time.Duration`        | `30s`                       | Maximum duration to wait for background refresh.                                                         |
+| `Forward.Timeout`                    | `time.Duration`        | `30s`                       | Maximum duration to wait for a forwarded upstream origin request.                                        |
 | `ETag.Disable`                       | `bool`                 | `false`                     | Disables ETag handling and generation.                                                                   |
 | `ETag.CRC32`                         | `bool`                 | `false`                     | Use CRC32 for on-the-fly ETag calculation instead of MD5.                                                |
 | `ETag.SHA256`                        | `bool`                 | `false`                     | Use SHA256 for on-the-fly ETag calculation instead of MD5.                                               |
 | `Headers.IgnoreVary`                 | `[]string`             | `nil`                       | List of headers to omit when processing origin `Vary`.                                                   |
 | `Headers.OverrideOriginCacheControl` | `bool`                 | `false`                     | Overrides origin Cache-Control headers with configured timing (breaks RFC 9111).                         |
 | `Headers.OverrideClientCacheControl` | `bool`                 | `false`                     | Overrides client request Cache-Control directives (breaks RFC 9111).                                     |
-| `Prometheus.Prefix`                  | `string`               | `""`                        | Metrics name prefix. When non-empty, Prometheus metrics are exported.                                    |
+| `Prometheus.Prefix`                  | `string`               | `""`                        | Metrics name prefix. Enables Prometheus metrics when non-empty and a `prometheus.Registerer` is set.     |
 
 ---
 
@@ -338,7 +372,7 @@ the [Caddy Plugin README](plugins/caddy/readme.md).
 
 - [ ] Surrogate Key / Cache Tag support for targeted group purges
 - [ ] Cache purge HTTP endpoints
-- [ ] Metrics
+- [x] Metrics
 - [ ] Full-featured negative caching
 - [ ] Full-featured conditional request handling beyond `If-None-Match`
 

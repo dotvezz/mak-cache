@@ -3,21 +3,26 @@ package mak
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"slices"
 	"time"
 
-	"github.com/dotvezz/mak-cache/requests"
-	"github.com/dotvezz/mak-cache/storage/otter"
-	"github.com/dotvezz/mak-cache/storage/valkey"
-	"golang.org/x/sync/singleflight"
-
 	"github.com/dotvezz/mak-cache/cache"
 	"github.com/dotvezz/mak-cache/config"
 	"github.com/dotvezz/mak-cache/headers"
+	metrics_p "github.com/dotvezz/mak-cache/metrics"
+	"github.com/dotvezz/mak-cache/requests"
+	"github.com/dotvezz/mak-cache/responses"
 	"github.com/dotvezz/mak-cache/storage"
+	"github.com/dotvezz/mak-cache/storage/otter"
+	"github.com/dotvezz/mak-cache/storage/valkey"
+
+	"github.com/prometheus/client_golang/prometheus"
+
+	"golang.org/x/sync/singleflight"
 )
 
 var (
@@ -29,6 +34,7 @@ var (
 type Middleware struct {
 	*slog.Logger
 	config.Config
+	metrics
 
 	metadataStorage storage.Provider[*cache.Metadata]
 	entryStorage    storage.Provider[*cache.Entry]
@@ -43,6 +49,8 @@ type options struct {
 	logger    *slog.Logger
 	config    config.Config
 	configKey string
+
+	prometheusRegisterer prometheus.Registerer
 }
 
 func addStorage[T storage.Storable](p *storage.Provider[T], store storage.Provider[T]) {
@@ -62,6 +70,12 @@ func WithConfig(c config.Config) func(o *options) {
 func WithConfigKey(key string) func(o *options) {
 	return func(o *options) {
 		o.configKey = key
+	}
+}
+
+func WithPrometheusRegistrer(r prometheus.Registerer) func(o *options) {
+	return func(o *options) {
+		o.prometheusRegisterer = r
 	}
 }
 
@@ -134,6 +148,27 @@ func New(optFuncs ...func(o *options)) (middleware func(next http.Handler) http.
 		}
 	}
 
+	if o.prometheusRegisterer != nil && h.Prometheus.Prefix != "" {
+		err = h.ProvisionMetrics(h.Prometheus.Prefix, o.prometheusRegisterer)
+		if err != nil {
+			return nil, fmt.Errorf("failed to provision metrics: %w", err)
+		}
+
+		if entryMetrics, ok := h.entryStorage.(metrics_p.Provisioner); ok {
+			err = entryMetrics.ProvisionMetrics(h.Prometheus.Prefix, o.prometheusRegisterer)
+			if err != nil {
+				return nil, fmt.Errorf("failed to provision metrics: %w", err)
+			}
+		}
+
+		if metadataMetrics, ok := h.metadataStorage.(metrics_p.Provisioner); ok {
+			err = metadataMetrics.ProvisionMetrics(h.Prometheus.Prefix, o.prometheusRegisterer)
+			if err != nil {
+				return nil, fmt.Errorf("failed to provision metrics: %w", err)
+			}
+		}
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 			h.ServeHTTP(writer, request, next)
@@ -179,6 +214,28 @@ func (m *Middleware) canBackgroundRefresh(respCC headers.CacheControl, entry *ca
 
 func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.Handler) {
 	cacheStatus := new(headers.CacheStatus)
+	var err error
+	if m.metrics.requests != nil {
+		start := now()
+		m.metrics.requests.Inc()
+		w = responses.NewTTFBWriter(w, start, m.metrics.ttfbSeconds.Observe)
+		defer func() {
+			m.metrics.transferSeconds.Observe(now().Sub(start).Seconds())
+			if cacheStatus.Hit {
+				m.metrics.hits.Inc()
+			}
+			if cacheStatus.Collapsed {
+				m.metrics.collapses.Inc()
+			}
+			if cacheStatus.TTL < 0 {
+				m.metrics.stale.Inc()
+			}
+			if err != nil {
+				m.metrics.errors.Inc()
+			}
+		}()
+	}
+
 	requestTime := now()
 
 	reqCC := headers.CacheControl{}
@@ -231,7 +288,7 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http
 	} else if !found {
 		// Miss
 		cacheStatus.FwdURIMiss = true
-		err := m.forward(w, r, cacheStatus, reqCC, requestTime, next, nil)
+		err = m.forward(w, r, cacheStatus, reqCC, requestTime, next, nil)
 		if err != nil {
 			m.Error("ServeHTTP", slog.String("error", err.Error()))
 		}
@@ -239,7 +296,7 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http
 	}
 
 	respCC := headers.CacheControl{}
-	err := respCC.FromDirectives(meta.CacheControl)
+	err = respCC.FromDirectives(meta.CacheControl)
 	if err != nil {
 		m.Info("Cache-Control", slog.String("error", err.Error()))
 	}

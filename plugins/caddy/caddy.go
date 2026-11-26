@@ -39,7 +39,8 @@ type caddyfileHelper interface {
 
 const (
 	defaultKey = " default " // Spaces to make it hard to parse an accidentally colliding key from Caddyfile
-	moduleName = "cache"
+	moduleName = "mak_cache"
+	moduleID   = "http.handlers.mak_cache"
 )
 
 func init() {
@@ -68,15 +69,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 
 func (h Handler) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.handlers.cache",
+		ID:  moduleID,
 		New: func() caddy.Module { return new(Handler) },
 	}
 }
 
-func (h *Handler) Provision(_ caddy.Context) (err error) {
+func (h *Handler) Provision(ctx caddy.Context) (err error) {
 	h.middleware, err = mak.New(
 		mak.WithConfig(h.Config),
 		mak.WithConfigKey(h.ConfigKey),
+		mak.WithPrometheusRegistrer(ctx.GetMetricsRegistry()),
 	)
 	return
 }
@@ -416,21 +418,26 @@ func parseStorageConfig(h caddyfileHelper) (config.StorageConfig, error) {
 		s.Otter.MemoryLimit = uint64(val)
 	case "valkey", "redis":
 		s.Valkey = &config.ValkeyConfig{}
-		if len(args) == 1 {
-			nesting := h.Nesting()
-			for h.NextBlock(nesting) {
-				subKey := h.Val()
-				switch subKey {
-				case "address":
-					if !h.Args(&s.Valkey.Address) {
-						return s, h.ArgErr()
-					}
-				default:
-					return s, h.Errf("unknown valkey/redis storage configuration subkey %q", subKey)
-				}
-			}
-		} else {
+		if len(args) == 2 {
 			s.Valkey.Address = args[1]
+		}
+		nesting := h.Nesting()
+		for h.NextBlock(nesting) {
+			subKey := h.Val()
+			switch subKey {
+			case "address":
+				if !h.Args(&s.Valkey.Address) {
+					return s, h.ArgErr()
+				}
+			case "timeout":
+				var err error
+				s.Valkey.Timeout, err = parseDurationArg(h)
+				if err != nil {
+					return s, err
+				}
+			default:
+				return s, h.Errf("unknown valkey/redis storage configuration subkey %q", subKey)
+			}
 		}
 	default:
 		return s, h.Errf("unknown storage provider %q", providerName)

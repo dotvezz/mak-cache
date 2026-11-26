@@ -10,8 +10,8 @@ var (
 	ErrAlreadyFired = errors.New("already fired")
 )
 
-func NewOneShot(inner http.ResponseWriter) *OneShot {
-	return &OneShot{
+func NewOneShot(inner http.ResponseWriter) *OneShotWriter {
+	return &OneShotWriter{
 		inner: inner,
 		buf:   bytes.NewBuffer([]byte{}),
 		Staged: http.Response{
@@ -21,7 +21,7 @@ func NewOneShot(inner http.ResponseWriter) *OneShot {
 	}
 }
 
-type OneShot struct {
+type OneShotWriter struct {
 	inner http.ResponseWriter
 
 	Staged http.Response
@@ -31,17 +31,17 @@ type OneShot struct {
 	fired bool
 }
 
-func (o *OneShot) Status() int {
+func (o *OneShotWriter) Status() int {
 	return o.Staged.StatusCode
 }
 
-func (o *OneShot) Reset() {
+func (o *OneShotWriter) Reset() {
 	o.Staged = http.Response{
 		Header: make(http.Header)}
 	o.buf.Reset()
 }
 
-func (o *OneShot) Fire() error {
+func (o *OneShotWriter) Fire() error {
 	if o.fired {
 		return ErrAlreadyFired
 	}
@@ -58,14 +58,14 @@ func (o *OneShot) Fire() error {
 	return err
 }
 
-func (o *OneShot) Header() http.Header {
+func (o *OneShotWriter) Header() http.Header {
 	return o.Staged.Header
 }
 
-func (o *OneShot) Write(bytes []byte) (int, error) {
+func (o *OneShotWriter) Write(bytes []byte) (int, error) {
 	return o.buf.Write(bytes)
 }
 
-func (o *OneShot) WriteHeader(statusCode int) {
+func (o *OneShotWriter) WriteHeader(statusCode int) {
 	o.Staged.StatusCode = statusCode
 }

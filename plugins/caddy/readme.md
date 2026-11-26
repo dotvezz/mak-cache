@@ -1,6 +1,6 @@
 # mak-cache/plugins/caddy
 
-A high-performance HTTP caching module for [Caddy v2](https://caddyserver.com/) (`http.handlers.cache`), built for real-world use with precision and care.
+A high-performance HTTP caching module for [Caddy v2](https://caddyserver.com/) (`http.handlers.mak_cache`), built for real-world use with precision and care.
 
 `mak-cache` brings enterprise-grade HTTP caching to Caddy, featuring multi-tier storage (in-memory + Valkey/Redis), request coalescing (singleflight stampede protection), decoupled metadata indexing, dynamic `Vary` support, RFC 5861 background stale-while-revalidate refreshes, and full RFC 9111 / RFC 9211 compliance.
 
@@ -43,10 +43,10 @@ COPY --from=build /usr/bin/caddy /usr/bin/caddy
 
 ## Directive Placement & Ordering
 
-The module registers the `cache` directive automatically in Caddy's HTTP handler chain **before `rewrite`**:
+The module registers the `mak_cache` directive automatically in Caddy's HTTP handler chain **before `rewrite`**:
 
 ```
-cache -> rewrite -> ... -> reverse_proxy
+mak_cache -> rewrite -> ... -> reverse_proxy
 ```
 
 This ensures that incoming requests are checked against the cache before rewrites or proxy roundtrips, and responses from upstream handlers (e.g. `reverse_proxy`, `file_server`) are captured, evaluated for cacheability, and served efficiently.
@@ -55,14 +55,14 @@ This ensures that incoming requests are checked against the cache before rewrite
 
 ## Caddyfile Configuration Reference
 
-The `cache` directive can be configured:
+The `mak_cache` directive can be configured:
 1. **Globally**: Inside the top-level global options block `{ ... }`. This allows sharing a single cache instance across multiple site blocks or defining named cache profiles.
 2. **Per Site / Route**: Inside a site block `example.com { ... }` or route handler block.
 
 ### Syntax Overview
 
 ```Caddyfile
-cache [optional_profile_name] {
+mak_cache [optional_profile_name] {
     timing {
         ttl <duration>
         max_stale <duration>
@@ -152,8 +152,15 @@ Configures where cache response bodies and entries are stored. At least one stor
   # Or with redis alias and block syntax:
   storage redis {
       address localhost:6379
+      timeout 50ms
+  }
+  # Inline address with optional timeout block:
+  storage valkey localhost:6379 {
+      timeout 100ms
   }
   ```
+  - `address <host:port>`: Network address of the Valkey/Redis server.
+  - `timeout <duration>`: Per-operation timeout for `Get`/`Set` calls (defaults to `50ms`).
 - **Tiered / Layered Storage**:
   You can declare multiple storage backends. Defining an in-memory layer followed by a Valkey layer automatically chains them:
   ```Caddyfile
@@ -206,7 +213,7 @@ Adjusts header evaluation and HTTP specification compliance:
 - `override_client_cache_control [bool]`: Ignore client-side cache bypass directives such as `no-cache` or `max-age=0`. *(Warning: breaks RFC 9111 compliance).*
 
 #### `prometheus`
-Enables Prometheus metric instrumentation:
+Enables Prometheus metric instrumentation using Caddy's built-in Prometheus registry (`ctx.GetMetricsRegistry()`):
 ```Caddyfile
 prometheus my_cache
 # Or:
@@ -214,6 +221,11 @@ prometheus {
     prefix my_cache
 }
 ```
+When a prefix is configured, `mak-cache` automatically exports:
+- **Middleware metrics:** `<prefix>_requests`, `<prefix>_hits`, `<prefix>_stale_count`, `<prefix>_collapse_count`, `<prefix>_error_count`, `<prefix>_ttfb_seconds`, and `<prefix>_transfer_seconds`.
+- **Storage metrics (scoped with `_entry` or `_metadata`):**
+  - Otter: `<prefix>_{entry,metadata}_otter_in_memory_{hits,gets,sets,get_seconds,set_seconds}`
+  - Valkey / Redis: `<prefix>_{entry,metadata}_redis_valkey_{hits,gets,sets,get_errors,set_errors,get_seconds,set_seconds}`
 
 ---
 
@@ -225,7 +237,7 @@ Caches responses for `api.example.com` backed by an upstream reverse proxy:
 
 ```Caddyfile
 api.example.com {
-    cache {
+    mak_cache {
         timing {
             ttl 10m
             max_stale 2m
@@ -245,7 +257,7 @@ Define a global cache in the top-level options block. Multiple site blocks refer
 
 ```Caddyfile
 {
-    cache {
+    mak_cache {
         timing {
             ttl 5m
             max_stale 1m
@@ -256,12 +268,12 @@ Define a global cache in the top-level options block. Multiple site blocks refer
 }
 
 api.example.com {
-    cache
+    mak_cache
     reverse_proxy http://api-service:8080
 }
 
 web.example.com {
-    cache
+    mak_cache
     reverse_proxy http://web-service:3000
 }
 ```
@@ -273,7 +285,7 @@ Define distinct cache profiles with different TTLs and capacities in the global 
 ```Caddyfile
 {
     # Long-lived static assets cache
-    cache assets {
+    mak_cache assets {
         timing {
             ttl 720h # 30 days
         }
@@ -282,7 +294,7 @@ Define distinct cache profiles with different TTLs and capacities in the global 
     }
 
     # Short-lived dynamic API cache with singleflight coalescing
-    cache api {
+    mak_cache api {
         timing {
             ttl 2m
             max_stale 30s
@@ -298,17 +310,17 @@ Define distinct cache profiles with different TTLs and capacities in the global 
 }
 
 static1.example.com {
-    cache assets
+    mak_cache assets
     reverse_proxy http://cdn-origin:8080
 }
 
 static2.example.com {
-    cache assets
+    mak_cache assets
     reverse_proxy http://cdn-origin:8080
 }
 
 api.example.com {
-    cache api
+    mak_cache api
     reverse_proxy http://api-origin:8080
 }
 ```
@@ -319,7 +331,7 @@ Combines fast local RAM with a shared distributed Valkey/Redis instance and in-m
 
 ```Caddyfile
 {
-    cache {
+    mak_cache {
         timing {
             ttl 30m
             max_stale 5m
@@ -337,7 +349,7 @@ Combines fast local RAM with a shared distributed Valkey/Redis instance and in-m
 }
 
 api.example.com {
-    cache
+    mak_cache
     reverse_proxy http://api-backend:8080
 }
 ```
@@ -346,7 +358,7 @@ api.example.com {
 
 ```Caddyfile
 api.example.com {
-    cache {
+    mak_cache {
         timing {
             ttl 15m
             max_stale 2m
