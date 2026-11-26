@@ -8,6 +8,7 @@ import (
 	"github.com/dotvezz/mak-cache/config"
 	"github.com/dotvezz/mak-cache/storage"
 	"github.com/maypok86/otter/v2"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var now = time.Now
@@ -15,24 +16,52 @@ var now = time.Now
 type Provider[T storage.Storable] struct {
 	cache *otter.Cache[string, T]
 	now   func() time.Time
+
+	hits       prometheus.Counter
+	gets       prometheus.Counter
+	getSeconds prometheus.Histogram
+
+	sets       prometheus.Counter
+	setSeconds prometheus.Histogram
 }
 
-func (p Provider[T]) Get(_ context.Context, key string) (T, error) {
-	r, ok := p.cache.GetEntry(key)
-	if !ok {
-		return r.Value, storage.ErrNotFound
+func (p *Provider[T]) Get(_ context.Context, key string) (_ T, err error) {
+	if p.getSeconds != nil {
+		start := now()
+		defer func() {
+			p.getSeconds.Observe(now().Sub(start).Seconds())
+
+			p.gets.Inc()
+
+			if err == nil {
+				p.hits.Inc()
+			}
+		}()
 	}
 
-	return r.Value, nil
+	r, ok := p.cache.GetEntry(key)
+	if !ok {
+		err = storage.ErrNotFound
+	}
+
+	return r.Value, err
 }
 
-func (p Provider[T]) Set(_ context.Context, key string, value T) error {
+func (p *Provider[T]) Set(_ context.Context, key string, value T) error {
+	if p.setSeconds != nil {
+		start := now()
+		defer func() {
+			p.setSeconds.Observe(now().Sub(start).Seconds())
+			p.sets.Inc()
+		}()
+	}
+
 	value.RefreshHeapSize()
 	_, _ = p.cache.Set(key, value)
 	return nil
 }
 
-func (p Provider[T]) Update(_ context.Context, k string, value T) error {
+func (p *Provider[T]) Update(_ context.Context, k string, value T) error {
 	return p.Set(nil, k, value)
 }
 

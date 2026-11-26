@@ -241,8 +241,11 @@ func (r *RefreshConfig) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type PrometheusConfig struct {
-	// Prefix enables Prometheus exporting; unlike most other configurables, metrics are disabled by default.
-	// It also defines the prefix to use for metrics names. A prefix is required to enable Prometheus metrics.
+	// Prefix  defines the prefix to use for metrics names. It is required to enable Prometheus metrics.
+	//
+	// In the Caddy plugin, setting this value automatically enables metrics using Caddy's Prometheus integration.
+	//
+	// When running as a middleware, a prometheus.Registerer must be provided at initialization to enable metrics.
 	Prefix string `json:"prefix" yaml:"prefix"`
 }
 
