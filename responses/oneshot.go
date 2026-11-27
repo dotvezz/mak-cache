@@ -10,6 +10,7 @@ var (
 	ErrAlreadyFired = errors.New("already fired")
 )
 
+// NewOneShot creates a new OneShotWriter that wraps the provided http.ResponseWriter.
 func NewOneShot(inner http.ResponseWriter) *OneShotWriter {
 	return &OneShotWriter{
 		inner: inner,
@@ -21,6 +22,9 @@ func NewOneShot(inner http.ResponseWriter) *OneShotWriter {
 	}
 }
 
+// OneShotWriter is a wrapper around http.ResponseWriter that allows for staging a response before firing it.
+// The response can be reset and overwritten multiple times before firing. This allows us to collect responses from
+// origins and hold, inspect, and conditionally handle them before writing to the client.
 type OneShotWriter struct {
 	inner http.ResponseWriter
 
