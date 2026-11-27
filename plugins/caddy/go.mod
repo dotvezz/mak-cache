@@ -4,9 +4,11 @@ go 1.26.0
 
 require (
 	github.com/caddyserver/caddy/v2 v2.11.9
-	github.com/dotvezz/mak-cache v0.1.3
+	github.com/dotvezz/mak-cache v0.1.7
 	github.com/dustin/go-humanize v1.1.0
 )
+
+replace github.com/dotvezz/mak-cache => ../..
 
 require (
 	cel.dev/cel-go v0.32.0 // indirect
@@ -154,5 +156,3 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	howett.net/plist v1.0.1 // indirect
 )
-
-replace github.com/dotvezz/mak-cache => ../..
