@@ -16,6 +16,8 @@ type metadataResult struct {
 }
 
 func (m *Middleware) getMetadata(ctx context.Context, key string) (r metadataResult) {
+	// Prefixing the key with "m" to avoid possible collisions with entry keys, since it's possible to configure a
+	// shared storage backend
 	key = "m" + key
 	var err error
 	if m.metadataStorage == nil {
@@ -44,6 +46,9 @@ func (m *Middleware) setMetadata(ctx context.Context, key string, meta *cache.Me
 	if meta == nil {
 		return fmt.Errorf("metadata is nil")
 	}
+
+	// Prefixing the key with "m" to avoid possible collisions with entry keys, since it's possible to configure a
+	// shared storage backend
 	key = "m" + key
 
 	// Allow for entry storage to act as metadata storage, if no dedicated metadata storage is configured
@@ -61,6 +66,9 @@ func (m *Middleware) updateMetadata(ctx context.Context, key string, md *cache.M
 	if md == nil {
 		return fmt.Errorf("metadata is nil")
 	}
+
+	// Prefixing the key with "m" to avoid possible collisions with entry keys, since it's possible to configure a
+	// shared storage backend
 	key = "m" + key
 
 	// Allow for entry storage to act as metadata storage, if no dedicated metadata storage is configured
@@ -80,6 +88,8 @@ type entryResult struct {
 }
 
 func (m *Middleware) getEntry(ctx context.Context, key string) (er entryResult) {
+	// Prefixing the key with "e" to avoid possible collisions with metadata keys, since it's possible to configure a
+	// shared storage backend
 	key = "e" + key
 	var err error
 	er.entry, err = m.entryStorage.Get(ctx, key)
@@ -95,11 +105,16 @@ func (m *Middleware) getEntry(ctx context.Context, key string) (er entryResult) 
 }
 
 func (m *Middleware) setEntry(ctx context.Context, key string, entry *cache.Entry) error {
+	// Prefixing the key with "e" to avoid possible collisions with metadata keys, since it's possible to configure a
+	// shared storage backend
 	key = "e" + key
 	return m.entryStorage.Set(ctx, key, entry)
 }
 
 func (m *Middleware) updateEntry(ctx context.Context, key string, entry *cache.Entry) error {
+
+	// Prefixing the key with "e" to avoid possible collisions with metadata keys, since it's possible to configure a
+	// shared storage backend
 	key = "e" + key
 	return m.entryStorage.Update(ctx, key, entry)
 }

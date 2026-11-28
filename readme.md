@@ -79,8 +79,7 @@ AI-assisted.
     - Automatic generation of `304 Not Modified` responses for downstream clients.
     - On-the-fly ETag generation when missing from origin responses (MD5 default, CRC32, or SHA256).
 - **Negative Caching (`StatusTimings`)**: **WIP**
-    - Configurable custom TTL and stale tolerances for specific HTTP status codes (e.g., short-lived caching for
-      `404 Not Found` or `500 Internal Server Error`).
+    - Configurable custom TTL for specific HTTP status codes (e.g., short-lived caching for `404 Not Found` or `500 Internal Server Error`).
 - **Metrics & Observability**:
     - Prometheus metrics support with a configurable prefix, exporting middleware-level request/hit/stale/collapse/error
       counters, TTFB and transfer duration histograms (with native histogram support), and per-tier storage metrics for
@@ -373,8 +372,9 @@ Each configured storage provider also exports metrics scoped by storage role (`_
 - [ ] Surrogate Key / Cache Tag support for targeted group purges
 - [ ] Cache purge HTTP endpoints
 - [x] Metrics
-- [ ] Full-featured negative caching
+- [x] Negative caching
 - [ ] Full-featured conditional request handling beyond `If-None-Match`
+- [ ] Overhaul of `OverrideOriginCacheControl` and `OverrideClientCacheControl`, with `OverrideExpires`
 
 ## License
 

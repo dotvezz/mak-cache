@@ -54,32 +54,30 @@ func (m *Middleware) backgroundRefresh(req *http.Request, meta *cache.Metadata, 
 func (m *Middleware) processResponseHeaders(reqH, respH http.Header, md *cache.Metadata, status int) (cacheable bool) {
 	// Handle the Cache-Control header, set metadata and cacheability
 	var respCC headers.CacheControl
-	if cc := respH.Values("Cache-Control"); len(cc) > 0 {
-		if m.Config.Headers.OverrideOriginCacheControl {
-			return true
+	if !m.Config.Headers.OverrideOriginCacheControl {
+		if cc := respH.Values("Cache-Control"); len(cc) > 0 {
+			respCC = headers.CacheControl{}
+			// Only load the most-recent (last in the slice) Cache-Control header
+			err := respCC.FromString(cc[len(cc)-1])
+			if err == nil {
+				// Only load Cache-Control into the metadata if we were able to successfully parse it
+				md.CacheControl = respCC.Directives()
+			}
+
+			if respCC.SMaxAge != nil {
+				md.Expires = now().Add(*respCC.SMaxAge)
+			} else if respCC.MaxAge != nil {
+				md.Expires = now().Add(*respCC.MaxAge)
+			}
+
+			return respCC.Cacheable(true)
 		}
 
-		respCC = headers.CacheControl{}
-		// Only load the most-recent (last in the slice) Cache-Control header
-		err := respCC.FromString(cc[len(cc)-1])
-		if err == nil {
-			// Only load Cache-Control into the metadata if we were able to successfully parse it
-			md.CacheControl = respCC.Directives()
+		// Only allow caching authorized requests if explicitly allowed in response Cache-Control
+		// RFC 9211 Sec 3.5
+		if reqH.Get("Authorization") != "" && !respCC.MustRevalidate && !respCC.Public && respCC.SMaxAge == nil {
+			return false
 		}
-
-		if respCC.SMaxAge != nil {
-			md.Expires = now().Add(*respCC.SMaxAge)
-		} else if respCC.MaxAge != nil {
-			md.Expires = now().Add(*respCC.MaxAge)
-		}
-
-		return respCC.Cacheable(true)
-	}
-
-	// Only allow caching authorized requests if explicitly allowed in response Cache-Control
-	// RFC 9211 Sec 3.5
-	if reqH.Get("Authorization") != "" && !respCC.MustRevalidate && !respCC.Public && respCC.SMaxAge == nil {
-		return false
 	}
 
 	// Handle Expires header, set metadata, and set not cacheable if invalid
@@ -114,6 +112,12 @@ func (m *Middleware) processResponseHeaders(reqH, respH http.Header, md *cache.M
 	case 200, 203, 204, 206, 300, 301, 308, 404, 405, 410, 414, 501:
 		return true
 	}
+
+	if t, ok := m.StatusTimings[status]; ok {
+		md.Expires = now().Add(t.TTL)
+		return true
+	}
+
 	return false
 }
 
@@ -207,11 +211,12 @@ func (m *Middleware) forward(
 		// We're not really concerned with the errors here.
 		_ = respCC.FromDirectives(entry.CacheControl)
 
-		// When we're getting an error from upstream, and it's eligible under stale-if-error directives,
+		// When we're getting an error from upstream, and it's eligible under stale-if-error config or directives,
 		// replace the new entry with the cached/stale one
 		switch {
 		case respCC.StaleIfError != nil && entry.Expires.Add(*respCC.StaleIfError).After(requestTime),
-			reqCacheControl.StaleIfError != nil && entry.Expires.Add(*reqCacheControl.StaleIfError).After(requestTime):
+			!m.Config.Headers.OverrideClientCacheControl && reqCacheControl.StaleIfError != nil && entry.Expires.Add(*reqCacheControl.StaleIfError).After(requestTime),
+			m.Config.Headers.OverrideClientCacheControl && entry.Expires.Add(m.Config.Timing.StaleIfError).After(requestTime):
 			respE = entry
 			oneShot.Reset()
 		}

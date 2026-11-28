@@ -73,6 +73,10 @@ type ValkeyConfig struct {
 	Timeout time.Duration `json:"timeout" yaml:"timeout"`
 }
 
+type StatusTimingConfig struct {
+	TTL time.Duration `json:"ttl"`
+}
+
 type TimingConfig struct {
 	// TTL sets the TTL for cache entries.
 	TTL time.Duration `json:"ttl"`
@@ -84,6 +88,36 @@ type TimingConfig struct {
 	// stampedes on synchronized downstream cache expiry.
 	// This does not affect the TTL of the cache entry itself. The zero/empty value disables jitter.
 	TTLSplay time.Duration `json:"ttl_splay"`
+
+	// StaleIfError sets the maximum staleness for cache entries to be served stale of an error occurs during
+	// forwarding.
+	StaleIfError time.Duration `json:"stale_if_error" yaml:"stale_if_error"`
+}
+
+func (t StatusTimingConfig) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		TTL string `json:"ttl,omitempty"`
+	}{
+		TTL: formatDuration(t.TTL),
+	})
+}
+
+func (t *StatusTimingConfig) UnmarshalJSON(b []byte) (err error) {
+	var aux struct {
+		TTL string `json:"ttl"`
+	}
+
+	if err = json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+
+	ttl, err := parseDurationValue(aux.TTL)
+	if err != nil {
+		return fmt.Errorf("invalid ttl value: %w", err)
+	}
+	t.TTL = ttl
+
+	return nil
 }
 
 func (t TimingConfig) MarshalJSON() ([]byte, error) {
@@ -290,7 +324,7 @@ type Config struct {
 	Forward    ForwardConfig    `json:"forward" yaml:"forward"`
 
 	// StatusTimings allows negative caching for the given HTTP status codes, even if they are not typically cacheable
-	StatusTimings map[int]TimingConfig `json:"status_timings,omitempty" yaml:"status_timings,omitempty"`
+	StatusTimings map[int]StatusTimingConfig `json:"status_timings,omitempty" yaml:"status_timings,omitempty"`
 
 	// Storage allows for configuring the cache entry storage. At least one Storage must be configured.
 	// Multiple Storage configurations can be tied together for a layered setup, for example, a low-latency in-memory
@@ -338,7 +372,7 @@ func (c *Config) UnmarshalJSON(b []byte) error {
 	type PlainConfig Config
 	var aux struct {
 		PlainConfig
-		StatusTimings map[string]TimingConfig `json:"status_timings"`
+		StatusTimings map[string]StatusTimingConfig `json:"status_timings"`
 	}
 	if err := json.Unmarshal(b, &aux); err != nil {
 		return err
@@ -346,7 +380,7 @@ func (c *Config) UnmarshalJSON(b []byte) error {
 
 	*c = Config(aux.PlainConfig)
 	if len(aux.StatusTimings) > 0 {
-		c.StatusTimings = make(map[int]TimingConfig)
+		c.StatusTimings = make(map[int]StatusTimingConfig)
 		for k, v := range aux.StatusTimings {
 			code, err := strconv.Atoi(k)
 			if err != nil {

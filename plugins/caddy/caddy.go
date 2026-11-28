@@ -192,12 +192,12 @@ func parseFromCustomHelper(h caddyfileHelper, c *config.Config) (err error) {
 				}
 				statusCodes = append(statusCodes, code)
 			}
-			var t config.TimingConfig
-			if err = parseTimingConfig(h, &t); err != nil {
+			var t config.StatusTimingConfig
+			if err = parseStatusTimingConfig(h, &t); err != nil {
 				return err
 			}
 			if c.StatusTimings == nil {
-				c.StatusTimings = make(map[int]config.TimingConfig)
+				c.StatusTimings = make(map[int]config.StatusTimingConfig)
 			}
 			for _, code := range statusCodes {
 				c.StatusTimings[code] = t
@@ -351,6 +351,25 @@ func parseDurationArg(h caddyfileHelper) (time.Duration, error) {
 	return d, nil
 }
 
+func parseStatusTimingConfig(h caddyfileHelper, t *config.StatusTimingConfig) (err error) {
+	args := h.RemainingArgs()
+	if len(args) > 0 {
+		t.TTL, err = time.ParseDuration(args[0])
+	}
+	nesting := h.Nesting()
+	for h.NextBlock(nesting) {
+		subKey := h.Val()
+		switch subKey {
+		case "ttl":
+			t.TTL, err = parseDurationArg(h)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func parseTimingConfig(h caddyfileHelper, t *config.TimingConfig) (err error) {
 	nesting := h.Nesting()
 	for h.NextBlock(nesting) {
@@ -368,6 +387,11 @@ func parseTimingConfig(h caddyfileHelper, t *config.TimingConfig) (err error) {
 			}
 		case "ttl_splay":
 			t.TTLSplay, err = parseDurationArg(h)
+			if err != nil {
+				return err
+			}
+		case "stale_if_error":
+			t.StaleIfError, err = parseDurationArg(h)
 			if err != nil {
 				return err
 			}

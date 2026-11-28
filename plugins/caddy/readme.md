@@ -67,12 +67,14 @@ mak_cache [optional_profile_name] {
         ttl <duration>
         max_stale <duration>
         ttl_splay <duration>
+        stale_if_error <duration>
     }
 
     status_timings <status_codes...> {
         ttl <duration>
         max_stale <duration>
         ttl_splay <duration>
+        stale_if_error <duration>
     }
 
     storage <in_memory|otter> <size>

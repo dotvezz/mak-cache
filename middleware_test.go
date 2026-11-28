@@ -13,7 +13,9 @@ import (
 	"time"
 
 	mock_origin "github.com/dotvezz/mak-cache/_test/mock-origin"
+	"github.com/dotvezz/mak-cache/cache"
 	"github.com/dotvezz/mak-cache/config"
+	"github.com/dotvezz/mak-cache/headers"
 	"github.com/dustin/go-humanize"
 )
 
@@ -22,10 +24,6 @@ func must[T any](v T, err error) T {
 		panic(err)
 	}
 	return v
-}
-
-func pointerTo[T any](v T) *T {
-	return &v
 }
 
 func TestMiddleware_ServeHTTP_ConcurrentMissCollapse(t *testing.T) {
@@ -123,7 +121,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"miss"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -136,7 +134,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit", "ttl=10", "key=1da3b6a6967c85e0e85ccb735a3bb77d"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 		},
@@ -151,7 +149,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=method"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -164,7 +162,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=method"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -177,7 +175,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=method"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 		},
@@ -191,7 +189,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss", "stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -203,7 +201,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 		},
@@ -217,7 +215,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -230,7 +228,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd="},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -245,7 +243,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss"},
 					cacheStatusAvoids:  []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -257,7 +255,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusAvoids:  []string{"hit"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -272,7 +270,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss"},
 					cacheStatusAvoids:  []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -284,7 +282,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusAvoids:  []string{"hit"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -298,7 +296,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss", "stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -310,7 +308,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -323,7 +321,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd="},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -338,7 +336,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss", "stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -351,7 +349,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -364,7 +362,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd="},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 			{
@@ -377,7 +375,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -391,7 +389,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -403,7 +401,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -416,7 +414,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				},
 				want: want{
 					status:             200,
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -428,7 +426,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				},
 				want: want{
 					status:             304,
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -440,7 +438,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				},
 				want: want{
 					status:             200,
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -455,7 +453,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=method"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -468,7 +466,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=method"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -481,7 +479,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=method"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 		},
@@ -495,7 +493,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss", "stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -519,7 +517,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -533,7 +531,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss", "stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -545,7 +543,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -558,7 +556,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd="},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -572,7 +570,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -584,7 +582,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusAvoids:  []string{"hit"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -597,7 +595,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				},
 				want: want{
 					status:             200,
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -609,7 +607,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -622,7 +620,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusAvoids:  []string{"hit"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -637,7 +635,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusAvoids:  []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -649,7 +647,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -662,7 +660,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				},
 				want: want{
 					status:             200,
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -674,7 +672,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusAvoids:  []string{"hit"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 			{
@@ -686,7 +684,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss"},
-					originRequestCount: pointerTo(3),
+					originRequestCount: new(3),
 				},
 			},
 			{
@@ -698,7 +696,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(3),
+					originRequestCount: new(3),
 				},
 			},
 		},
@@ -712,7 +710,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss", "stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -724,7 +722,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -737,7 +735,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd="},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -751,7 +749,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -763,7 +761,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -776,7 +774,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd="},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -789,7 +787,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				},
 				want: want{
 					status:             200,
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -801,7 +799,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				},
 				want: want{
 					status:             304,
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 		},
@@ -815,7 +813,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             404,
 					cacheStatusNeeds:   []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -827,7 +825,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             404,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -839,7 +837,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=method"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 			{
@@ -851,7 +849,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             404,
 					cacheStatusNeeds:   []string{"fwd="},
-					originRequestCount: pointerTo(3),
+					originRequestCount: new(3),
 				},
 			},
 		},
@@ -865,7 +863,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             500,
 					cacheStatusNeeds:   []string{"fwd=uri-miss"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -877,7 +875,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             500,
 					cacheStatusAvoids:  []string{"hit"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -891,7 +889,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             404,
 					cacheStatusNeeds:   []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -903,7 +901,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             404,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 		},
@@ -916,7 +914,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				},
 				want: want{
 					status:             200,
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -929,7 +927,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 		},
@@ -942,7 +940,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				},
 				want: want{
 					status:             200,
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -965,7 +963,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				},
 				want: want{
 					status:             200,
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -979,7 +977,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusAvoids:  []string{"hit"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -993,7 +991,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss", "stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -1005,7 +1003,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 		},
@@ -1021,7 +1019,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss"},
 					cacheStatusAvoids:  []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -1034,7 +1032,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusAvoids:  []string{"hit"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -1049,7 +1047,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -1062,7 +1060,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 		},
@@ -1077,7 +1075,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -1090,7 +1088,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 		},
@@ -1105,7 +1103,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -1118,7 +1116,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"hit"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 		},
@@ -1132,7 +1130,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -1146,7 +1144,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusAvoids:  []string{"hit"},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -1160,7 +1158,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -1185,7 +1183,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				},
 				want: want{
 					status:             200,
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -1210,7 +1208,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd=uri-miss", "stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -1223,7 +1221,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"fwd="},
-					originRequestCount: pointerTo(2),
+					originRequestCount: new(2),
 				},
 			},
 		},
@@ -1238,7 +1236,7 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				want: want{
 					status:             200,
 					cacheStatusNeeds:   []string{"stored"},
-					originRequestCount: pointerTo(1),
+					originRequestCount: new(1),
 				},
 			},
 			{
@@ -1344,5 +1342,54 @@ func TestMiddleware_ServeHTTP(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestMiddleware_requestRequiresRevalidation(t *testing.T) {
+	type args struct {
+		reqCC       headers.CacheControl
+		entry       *cache.Entry
+		requestTime time.Time
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "Default",
+			args: args{
+				reqCC: headers.CacheControl{},
+				entry: &cache.Entry{
+					Metadata: cache.Metadata{
+						Date: must(time.Parse(time.RFC3339, "2023-01-01T00:00:00Z")),
+					},
+				},
+				requestTime: must(time.Parse(time.RFC3339, "2023-01-02T00:00:00Z")),
+			},
+			want: false,
+		},
+		{
+			name: "Revalidate for Cache-Control Min-Fresh",
+			args: args{
+				reqCC: headers.CacheControl{
+					MinFresh: new(must(time.ParseDuration("1h"))),
+				},
+				entry: &cache.Entry{
+					Metadata: cache.Metadata{
+						Date: must(time.Parse(time.RFC3339, "2023-01-01T00:00:00Z")),
+					},
+				},
+				requestTime: must(time.Parse(time.RFC3339, "2023-01-02T00:00:00Z")),
+			},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := requestRequiresRevalidation(tt.args.reqCC, tt.args.entry, tt.args.requestTime); got != tt.want {
+				t.Errorf("requestRequiresRevalidation() = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
