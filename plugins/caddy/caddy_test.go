@@ -21,7 +21,6 @@ func TestParseFromCustomHelper(t *testing.T) {
 		}
 		status_timings 404 500 {
 			ttl 1m
-			max_stale 10s
 		}
 		etag {
 			disable false
@@ -79,9 +78,8 @@ func TestParseFromCustomHelper(t *testing.T) {
 	if len(cfg.StatusTimings) != 2 {
 		t.Errorf("expected 2 status timings, got %d", len(cfg.StatusTimings))
 	}
-	expectedStatusTiming := config.TimingConfig{
-		TTL:      1 * time.Minute,
-		MaxStale: 10 * time.Second,
+	expectedStatusTiming := config.StatusTimingConfig{
+		TTL: 1 * time.Minute,
 	}
 	for _, code := range []int{404, 500} {
 		if got, ok := cfg.StatusTimings[code]; !ok {

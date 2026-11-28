@@ -205,7 +205,7 @@ func isStale(entry *cache.Entry, requestTime time.Time) bool {
 func (m *Middleware) canBackgroundRefresh(respCC headers.CacheControl, entry *cache.Entry, requestTime time.Time) bool {
 	maxStale := m.Timing.MaxStale
 
-	if respCC.StaleWhileRevalidate != nil && !m.Headers.OverrideOriginCacheControl {
+	if !m.Headers.OverrideOriginCacheControl && respCC.StaleWhileRevalidate != nil {
 		maxStale = *respCC.StaleWhileRevalidate
 	}
 
@@ -255,7 +255,7 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http
 		}
 	}
 
-	if !reqCC.Cacheable(false) {
+	if !m.Config.Headers.OverrideClientCacheControl && !reqCC.Cacheable(false) {
 		cacheStatus.FwdBypass = true
 		w.Header().Add("Cache-Status", cacheStatus.String())
 		next.ServeHTTP(w, r)
@@ -338,7 +338,7 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next http
 		return
 	}
 
-	if requestRequiresRevalidation(reqCC, entry, requestTime) {
+	if !m.Headers.OverrideClientCacheControl && requestRequiresRevalidation(reqCC, entry, requestTime) {
 		cacheStatus.FwdRequest = true
 		err = m.revalidate(w, r, meta, entry, cacheStatus, requestTime, next)
 		if err != nil {
